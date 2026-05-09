@@ -10,12 +10,32 @@ pub enum BridgeRequest {
         request_id: String,
         payload: SyncPayload,
     },
+    #[serde(rename = "get_console_errors")]
+    GetConsoleErrors { request_id: String },
+    #[serde(rename = "get_sessions")]
+    GetSessions { request_id: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncPayload {
     pub key: String,
     pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConsoleErrorItem {
+    pub message: String,
+    pub url: Option<String>,
+    pub tab_id: Option<i32>,
+    pub ts: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionItem {
+    pub tab_id: i32,
+    pub url: String,
+    pub last_seen_ts: u64,
+    pub error_count: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,6 +48,18 @@ pub enum BridgeResponse {
         request_id: String,
         ok: bool,
         count: u32,
+    },
+    #[serde(rename = "console_errors")]
+    ConsoleErrors {
+        request_id: String,
+        count: usize,
+        items: Vec<ConsoleErrorItem>,
+    },
+    #[serde(rename = "sessions")]
+    Sessions {
+        request_id: String,
+        count: usize,
+        items: Vec<SessionItem>,
     },
     #[serde(rename = "error")]
     Error {
