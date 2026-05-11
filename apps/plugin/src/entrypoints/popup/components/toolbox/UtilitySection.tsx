@@ -14,6 +14,7 @@ type Props = {
   onSetNetworkRecording: (enabled: boolean) => void;
   onClearNetworkRecording: () => void;
   onExportNetworkCurl: () => void;
+  onCreateMockFromEntry: (entry: NetworkEntry) => void;
 };
 
 export function UtilitySection(props: Props) {
@@ -26,7 +27,8 @@ export function UtilitySection(props: Props) {
     onSetProxy,
     onSetNetworkRecording,
     onClearNetworkRecording,
-    onExportNetworkCurl
+    onExportNetworkCurl,
+    onCreateMockFromEntry
   } = props;
 
   const [qrUrl, setQrUrl] = React.useState('https://example.com');
@@ -75,7 +77,7 @@ export function UtilitySection(props: Props) {
       <Button onClick={onExportNetworkCurl} block>导出全部为 cURL</Button>
       <Input.TextArea value={curlOutput} readOnly autoSize={{ minRows: 4, maxRows: 10 }} placeholder="导出的 cURL 命令会显示在这里" />
       <Divider style={{ margin: '8px 0' }} />
-      <NetworkLogSection entries={networkEntries} onClear={onClearNetworkRecording} />
+      <NetworkLogSection entries={networkEntries} onClear={onClearNetworkRecording} onCreateMockFromEntry={onCreateMockFromEntry} />
     </Space>
   );
 }

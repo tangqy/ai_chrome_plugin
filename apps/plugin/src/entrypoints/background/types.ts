@@ -40,6 +40,29 @@ export type AutomationTask = {
   lastResult?: string;
 };
 
+export type MockRule = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  priority: number;
+  scene: string;
+  requestMatch: {
+    method: string;
+    pathPattern: string;
+    queryMatch?: Record<string, string>;
+    headerMatch?: Record<string, string>;
+  };
+  requestHeaderPatch?: Record<string, string>;
+  responseBodyMode: 'fixed' | 'mockjs' | 'script';
+  responseBodyRaw?: string;
+  mockjsTemplate?: string;
+  responseHeaders?: Record<string, string>;
+  status: number;
+  delayMs: number;
+  script: string;
+  imports: string[];
+};
+
 export type NetworkEntry = {
   id: string;
   url: string;

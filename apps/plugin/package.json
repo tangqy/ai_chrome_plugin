@@ -13,12 +13,14 @@
   "dependencies": {
     "@ant-design/icons": "^6.2.2",
     "antd": "^6.3.7",
+    "mockjs": "^1.1.0",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/chrome": "^0.1.42",
+    "@types/mockjs": "^1.0.10",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.8",
     "@types/react-dom": "^18.3.0",

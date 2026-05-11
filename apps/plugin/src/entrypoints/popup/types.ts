@@ -6,6 +6,7 @@ export type RuntimeStatus = {
   lastSyncResult?: SyncResult | null;
   lastDomainSyncResult?: DomainSyncResult | null;
   automationTasks?: AutomationTask[];
+  mockRules?: MockRule[];
   proxyMode?: 'system' | 'direct';
   networkRecordingEnabled?: boolean;
   networkRecordingTabId?: number | null;
@@ -53,6 +54,29 @@ export type AutomationTask = {
   enabled: boolean;
   lastRunAt?: number;
   lastResult?: string;
+};
+
+export type MockRule = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  priority: number;
+  scene: string;
+  requestMatch: {
+    method: string;
+    pathPattern: string;
+    queryMatch?: Record<string, string>;
+    headerMatch?: Record<string, string>;
+  };
+  requestHeaderPatch?: Record<string, string>;
+  responseBodyMode: 'fixed' | 'mockjs' | 'script';
+  responseBodyRaw?: string;
+  mockjsTemplate?: string;
+  responseHeaders?: Record<string, string>;
+  status: number;
+  delayMs: number;
+  script: string;
+  imports: string[];
 };
 
 export type NetworkEntry = {

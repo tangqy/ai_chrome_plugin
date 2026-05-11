@@ -4,6 +4,7 @@ import type {
   BridgeSession,
   ConsoleErrorItem,
   DomainSyncResult,
+  MockRule,
   NetworkEntry,
   RuntimeStatus,
   SyncResult
@@ -16,6 +17,7 @@ type State = {
   syncResult: SyncResult | null;
   domainSyncResult: DomainSyncResult | null;
   automationTasks: AutomationTask[];
+  mockRules: MockRule[];
   networkEntries: NetworkEntry[];
 };
 
@@ -33,6 +35,7 @@ export function useRuntimeStatus() {
     syncResult: null,
     domainSyncResult: null,
     automationTasks: [],
+    mockRules: [],
     networkEntries: []
   });
 
@@ -51,9 +54,8 @@ export function useRuntimeStatus() {
       bridgeSessions: Array.isArray(payload.sessions) ? payload.sessions : prev.bridgeSessions,
       syncResult: payload.lastSyncResult ?? prev.syncResult,
       domainSyncResult: payload.lastDomainSyncResult ?? prev.domainSyncResult,
-      automationTasks: Array.isArray(payload.automationTasks)
-        ? payload.automationTasks
-        : prev.automationTasks,
+      automationTasks: Array.isArray(payload.automationTasks) ? payload.automationTasks : prev.automationTasks,
+      mockRules: Array.isArray(payload.mockRules) ? payload.mockRules : prev.mockRules,
       networkEntries: Array.isArray(payload.networkEntries) ? payload.networkEntries : prev.networkEntries
     }));
   }, []);
@@ -69,13 +71,8 @@ export function useRuntimeStatus() {
     void refreshStatus();
     const timer = setInterval(() => void refreshStatus(), 1000);
     const listener = (message: unknown) => {
-      const m = message as {
-        type?: string;
-        payload?: RuntimeStatus & { errorItems?: ConsoleErrorItem[] };
-      };
-      if (m?.type === 'STATUS_PUSH' && m.payload) {
-        applyPayload(m.payload);
-      }
+      const m = message as { type?: string; payload?: RuntimeStatus & { errorItems?: ConsoleErrorItem[] } };
+      if (m?.type === 'STATUS_PUSH' && m.payload) applyPayload(m.payload);
     };
     chrome.runtime.onMessage.addListener(listener);
     return () => {
@@ -86,10 +83,8 @@ export function useRuntimeStatus() {
 
   return {
     state,
-    setSyncResult: (syncResult: SyncResult | null) =>
-      setState((prev) => ({ ...prev, syncResult })),
-    setDomainSyncResult: (domainSyncResult: DomainSyncResult | null) =>
-      setState((prev) => ({ ...prev, domainSyncResult })),
+    setSyncResult: (syncResult: SyncResult | null) => setState((prev) => ({ ...prev, syncResult })),
+    setDomainSyncResult: (domainSyncResult: DomainSyncResult | null) => setState((prev) => ({ ...prev, domainSyncResult })),
     refreshStatus
   };
 }

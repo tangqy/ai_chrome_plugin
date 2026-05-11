@@ -7,16 +7,27 @@ import { useRuntimeStatus } from './hooks/useRuntimeStatus';
 import { ObserveTab } from './tabs/ObserveTab';
 import { SyncTab } from './tabs/SyncTab';
 import { ToolboxTab } from './tabs/ToolboxTab';
+import { MockTab } from './tabs/MockTab';
+import type { NetworkEntry } from './types';
+
+type MockDraft = {
+  name: string;
+  method: string;
+  pathPattern: string;
+  headers: Record<string, string>;
+  postData?: string;
+};
 
 function App() {
   const { state, setDomainSyncResult, refreshStatus } = useRuntimeStatus();
-  const { runtime, errorItems, bridgeSessions, domainSyncResult, automationTasks, networkEntries } = state;
+  const { runtime, errorItems, bridgeSessions, domainSyncResult, automationTasks, mockRules, networkEntries } = state;
 
   const [status, setStatus] = React.useState('idle');
   const [lastErrorFetchAt, setLastErrorFetchAt] = React.useState('-');
   const [selectedTabKey, setSelectedTabKey] = React.useState('all');
   const [sourceDomain, setSourceDomain] = React.useState('react_web');
   const [curlOutput, setCurlOutput] = React.useState('');
+  const [mockSeedDraft, setMockSeedDraft] = React.useState<MockDraft | null>(null);
 
   const ping = async () => {
     setStatus('pinging...');
@@ -39,10 +50,7 @@ function App() {
   };
 
   const runDomainSync = async () => {
-    const res = await chrome.runtime.sendMessage({
-      type: 'SYNC_FROM_SOURCE_DOMAIN',
-      payload: { sourceDomain }
-    });
+    const res = await chrome.runtime.sendMessage({ type: 'SYNC_FROM_SOURCE_DOMAIN', payload: { sourceDomain } });
     if (res?.ok && res.payload) setDomainSyncResult(res.payload);
   };
 
@@ -67,17 +75,49 @@ function App() {
     else setCurlOutput(`导出失败: ${String(res?.error ?? res?.payload?.error ?? 'unknown')}`);
   };
 
+  const createMockFromEntry = async (entry: NetworkEntry) => {
+    const res = await chrome.runtime.sendMessage({ type: 'MOCK_CREATE_FROM_NETWORK_ENTRY', payload: { entry } });
+    if (res?.ok && res.payload?.draft) {
+      setMockSeedDraft(res.payload.draft as MockDraft);
+    }
+  };
+
   const upsertTask = async (name: string, cron: string, script: string) => {
-    await chrome.runtime.sendMessage({
-      type: 'AUTOMATION_UPSERT',
-      payload: { id: name, name, cron, script, enabled: true }
-    });
+    await chrome.runtime.sendMessage({ type: 'AUTOMATION_UPSERT', payload: { id: name, name, cron, script, enabled: true } });
     await refreshStatus();
   };
 
   const deleteTask = async (id: string) => {
     await chrome.runtime.sendMessage({ type: 'AUTOMATION_DELETE', payload: { id } });
     await refreshStatus();
+  };
+
+  const upsertMockRule = async (payload: Record<string, unknown>) => {
+    await chrome.runtime.sendMessage({ type: 'MOCK_RULES_UPSERT', payload: { ...payload, id: String(payload.id ?? payload.name ?? `mock-${Date.now()}`) } });
+    await refreshStatus();
+  };
+
+  const deleteMockRule = async (id: string) => {
+    await chrome.runtime.sendMessage({ type: 'MOCK_RULES_DELETE', payload: { id } });
+    await refreshStatus();
+  };
+
+  const toggleMockRule = async (id: string, enabled: boolean) => {
+    await chrome.runtime.sendMessage({ type: 'MOCK_RULES_TOGGLE', payload: { id, enabled } });
+    await refreshStatus();
+  };
+
+  const importCurl = async (curl: string): Promise<MockDraft | null> => {
+    const res = await chrome.runtime.sendMessage({ type: 'MOCK_IMPORT_CURL_PARSE', payload: { curl } });
+    return res?.ok ? (res.payload?.draft as MockDraft) : null;
+  };
+
+  const previewRule = async (payload: Record<string, unknown>): Promise<string> => {
+    const res = await chrome.runtime.sendMessage({ type: 'MOCK_RULE_PREVIEW_RESPONSE', payload });
+    if (!res?.ok) return String(res?.error ?? 'preview failed');
+    const p = res.payload;
+    if (p?.ok) return typeof p.output === 'string' ? p.output : JSON.stringify(p.output, null, 2);
+    return String(p?.error ?? 'preview failed');
   };
 
   return (
@@ -89,53 +129,22 @@ function App() {
             {
               key: 'observe',
               label: '观测面板',
-              children: (
-                <ObserveTab
-                  status={status}
-                  runtime={runtime}
-                  lastErrorFetchAt={lastErrorFetchAt}
-                  errorItems={errorItems}
-                  bridgeSessions={bridgeSessions}
-                  selectedTabKey={selectedTabKey}
-                  onSelectTab={setSelectedTabKey}
-                  onPing={() => void ping()}
-                  onFetchErrors={() => void fetchErrors()}
-                />
-              )
+              children: <ObserveTab status={status} runtime={runtime} lastErrorFetchAt={lastErrorFetchAt} errorItems={errorItems} bridgeSessions={bridgeSessions} selectedTabKey={selectedTabKey} onSelectTab={setSelectedTabKey} onPing={() => void ping()} onFetchErrors={() => void fetchErrors()} />
             },
             {
               key: 'sync-domain',
               label: '同步数据',
-              children: (
-                <SyncTab
-                  runtime={runtime}
-                  sourceDomain={sourceDomain}
-                  onChangeSourceDomain={setSourceDomain}
-                  domainSyncResult={domainSyncResult}
-                  onRunDomainSync={() => void runDomainSync()}
-                />
-              )
+              children: <SyncTab runtime={runtime} sourceDomain={sourceDomain} onChangeSourceDomain={setSourceDomain} domainSyncResult={domainSyncResult} onRunDomainSync={() => void runDomainSync()} />
             },
             {
               key: 'tools',
               label: '工具箱',
-              children: (
-                <ToolboxTab
-                  runtimeConnected={runtime.wsConnected}
-                  proxyMode={runtime.proxyMode ?? 'system'}
-                  networkRecordingEnabled={Boolean(runtime.networkRecordingEnabled)}
-                  networkEntryCount={Number(runtime.networkEntryCount ?? 0)}
-                  networkEntries={networkEntries}
-                  automationTasks={automationTasks}
-                  onSetProxy={(mode) => void setProxy(mode)}
-                  onSetNetworkRecording={(enabled) => void setNetworkRecording(enabled)}
-                  onClearNetworkRecording={() => void clearNetworkRecording()}
-                  onExportNetworkCurl={() => void exportNetworkCurl()}
-                  curlOutput={curlOutput}
-                  onUpsertTask={(name, cron, script) => void upsertTask(name, cron, script)}
-                  onDeleteTask={(id) => void deleteTask(id)}
-                />
-              )
+              children: <ToolboxTab runtimeConnected={runtime.wsConnected} proxyMode={runtime.proxyMode ?? 'system'} networkRecordingEnabled={Boolean(runtime.networkRecordingEnabled)} networkEntryCount={Number(runtime.networkEntryCount ?? 0)} networkEntries={networkEntries} automationTasks={automationTasks} onSetProxy={(mode) => void setProxy(mode)} onSetNetworkRecording={(enabled) => void setNetworkRecording(enabled)} onClearNetworkRecording={() => void clearNetworkRecording()} onExportNetworkCurl={() => void exportNetworkCurl()} onCreateMockFromEntry={(entry) => void createMockFromEntry(entry)} curlOutput={curlOutput} onUpsertTask={(name, cron, script) => void upsertTask(name, cron, script)} onDeleteTask={(id) => void deleteTask(id)} />
+            },
+            {
+              key: 'mock',
+              label: 'Mock 请求',
+              children: <MockTab rules={mockRules} seedDraft={mockSeedDraft} onConsumeSeedDraft={() => setMockSeedDraft(null)} onImportCurl={importCurl} onPreviewRule={previewRule} onUpsertRule={(p) => void upsertMockRule(p)} onDeleteRule={(id) => void deleteMockRule(id)} onToggleRule={(id, enabled) => void toggleMockRule(id, enabled)} />
             }
           ]}
         />

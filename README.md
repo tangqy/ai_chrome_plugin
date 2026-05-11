@@ -203,3 +203,41 @@ bridge 支持自然语言兜底，不强依赖 LLM：
 
 
 补充：Network 日志中心支持筛选请求并复制单条 cURL，仍支持批量导出。
+
+
+### 5) Mock 请求功能验证
+
+1. 打开 `Mock 请求` Tab，新增规则：
+   - URL 匹配：`/api/test`
+   - Method：`GET`
+   - 状态码：`200`
+   - 脚本：`return { code: 0, data: { now: context.now } };`
+2. 在当前页面控制台执行：`fetch('/api/test').then(r => r.json()).then(console.log)`
+3. 预期返回脚本生成的数据。
+4. 如需第三方模块，在“第三方模块”中每行填写：`dayjs@https://esm.sh/dayjs`，脚本可通过 `imports.dayjs` 使用。
+
+## Mock 高占比场景增强验证（cURL + 响应改写）
+
+1. cURL 导入
+- 打开 `Mock 请求` Tab。
+- 粘贴 cURL，点击 `解析 cURL 并带入草稿`。
+- 预期：`method + pathPattern + headerMatch` 自动填充。
+
+2. 从 Network 日志一键生成 Mock
+- 在工具箱开启 Network 录制并触发请求。
+- 在 `Network 日志中心` 点击某条请求的 `生成Mock`。
+- 预期：Mock Tab 自动带入对应草稿。
+
+3. 响应体复制与改写
+- 在 Mock Tab 选择 `fixed` 模式。
+- 将真实响应 JSON 粘贴到 `responseBodyRaw`，修改字段后保存。
+- 访问目标请求，预期返回修改后的响应。
+
+4. Header / Referer 改写
+- 在 `Referer（快捷）` 填值，或在 `requestHeaderPatch JSON` 配置 header。
+- 保存规则后触发请求，预期请求上下文按规则覆盖。
+- 在 `responseHeaders JSON` 设置自定义响应头，预期响应可见。
+
+5. 模式验证
+- `mockjs` 模式：填写 MockJS 模板，点击预览和请求验证。
+- `script` 模式：填写脚本与 imports（白名单域名），请求时动态生成。

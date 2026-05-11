@@ -1,5 +1,14 @@
 import { initBridge, callBridge, sendToBridge } from './bridge';
 import { initAutomationTicker } from './cron';
+import {
+  handleCurlImport,
+  handleMockDelete,
+  handleMockPreview,
+  handleMockToggle,
+  handleMockUpsert,
+  handleNetworkCreate,
+  pushMockRulesToActiveTab
+} from './mock';
 import { initNetworkRecorder } from './network';
 import { runDomainSync, runSyncData } from './operations';
 import { broadcastSnapshot, snapshot, state } from './state';
@@ -16,6 +25,8 @@ export default defineBackground(() => {
     broadcastSnapshot();
   }, 2000);
 
+  chrome.tabs.onActivated.addListener(() => void pushMockRulesToActiveTab());
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === 'PING') {
       sendResponse({ ok: true, ts: Date.now() });
@@ -24,26 +35,15 @@ export default defineBackground(() => {
 
     if (message?.type === 'PAGE_CONTEXT') {
       state.currentTabUrl = message?.payload?.url ?? null;
-      sendToBridge({
-        type: 'page_context',
-        ts: Date.now(),
-        payload: { url: state.currentTabUrl, tabId: sender?.tab?.id ?? null }
-      });
+      sendToBridge({ type: 'page_context', ts: Date.now(), payload: { url: state.currentTabUrl, tabId: sender?.tab?.id ?? null } });
+      void pushMockRulesToActiveTab();
       sendResponse({ ok: true });
       return true;
     }
 
     if (message?.type === 'CONSOLE_ERROR') {
       state.recentConsoleErrorCount += 1;
-      sendToBridge({
-        type: 'console_error',
-        ts: Date.now(),
-        payload: {
-          ...message.payload,
-          tabId: sender?.tab?.id ?? null,
-          url: sender?.tab?.url ?? state.currentTabUrl
-        }
-      });
+      sendToBridge({ type: 'console_error', ts: Date.now(), payload: { ...message.payload, tabId: sender?.tab?.id ?? null, url: sender?.tab?.url ?? state.currentTabUrl } });
       sendResponse({ ok: true });
       return true;
     }
@@ -53,10 +53,39 @@ export default defineBackground(() => {
       return true;
     }
 
+    if (message?.type === 'MOCK_RULES_UPSERT') {
+      sendResponse({ ok: true, payload: handleMockUpsert(message?.payload ?? {}) });
+      return true;
+    }
+
+    if (message?.type === 'MOCK_RULES_DELETE') {
+      sendResponse({ ok: true, payload: handleMockDelete(String(message?.payload?.id ?? '')) });
+      return true;
+    }
+
+    if (message?.type === 'MOCK_RULES_TOGGLE') {
+      sendResponse({ ok: true, payload: handleMockToggle(String(message?.payload?.id ?? ''), Boolean(message?.payload?.enabled)) });
+      return true;
+    }
+
+    if (message?.type === 'MOCK_IMPORT_CURL_PARSE') {
+      sendResponse({ ok: true, payload: handleCurlImport(String(message?.payload?.curl ?? '')) });
+      return true;
+    }
+
+    if (message?.type === 'MOCK_CREATE_FROM_NETWORK_ENTRY') {
+      sendResponse({ ok: true, payload: handleNetworkCreate(message?.payload?.entry ?? {}) });
+      return true;
+    }
+
+    if (message?.type === 'MOCK_RULE_PREVIEW_RESPONSE') {
+      sendResponse({ ok: true, payload: handleMockPreview(message?.payload ?? {}) });
+      return true;
+    }
+
     if (message?.type === 'PROXY_SET_MODE') {
       const mode = message?.payload?.mode === 'direct' ? 'direct' : 'system';
-      const config: chrome.types.ChromeSettingSetDetails<chrome.proxy.ProxyConfig>['value'] =
-        mode === 'direct' ? { mode: 'direct' } : { mode: 'system' };
+      const config: chrome.types.ChromeSettingSetDetails<chrome.proxy.ProxyConfig>['value'] = mode === 'direct' ? { mode: 'direct' } : { mode: 'system' };
       chrome.proxy.settings.set({ value: config, scope: 'regular' }, () => {
         if (chrome.runtime.lastError) {
           sendResponse({ ok: false, error: chrome.runtime.lastError.message });
@@ -150,10 +179,7 @@ export default defineBackground(() => {
     }
 
     if (message?.type === 'DIFF_TEXT_FAST') {
-      void callBridge('diff_text', {
-        left: String(message?.payload?.left ?? ''),
-        right: String(message?.payload?.right ?? '')
-      })
+      void callBridge('diff_text', { left: String(message?.payload?.left ?? ''), right: String(message?.payload?.right ?? '') })
         .then((res) => sendResponse({ ok: true, payload: res }))
         .catch((err) => sendResponse({ ok: false, error: err instanceof Error ? err.message : 'diff_text failed' }));
       return true;

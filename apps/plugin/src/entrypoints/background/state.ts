@@ -3,6 +3,7 @@ import type {
   BridgeSession,
   DomainSyncResult,
   ErrorItem,
+  MockRule,
   NetworkEntry,
   ProxyMode,
   SyncResult
@@ -17,6 +18,7 @@ export type BackgroundState = {
   lastSyncResult: SyncResult | null;
   lastDomainSyncResult: DomainSyncResult | null;
   automationTasks: AutomationTask[];
+  mockRules: MockRule[];
   proxyMode: ProxyMode;
   networkRecordingEnabled: boolean;
   networkRecordingTabId: number | null;
@@ -32,6 +34,7 @@ export const state: BackgroundState = {
   lastSyncResult: null,
   lastDomainSyncResult: null,
   automationTasks: [],
+  mockRules: [],
   proxyMode: 'system',
   networkRecordingEnabled: false,
   networkRecordingTabId: null,
@@ -48,6 +51,7 @@ export function snapshot() {
     lastSyncResult: state.lastSyncResult,
     lastDomainSyncResult: state.lastDomainSyncResult,
     automationTasks: state.automationTasks,
+    mockRules: state.mockRules,
     proxyMode: state.proxyMode,
     networkRecordingEnabled: state.networkRecordingEnabled,
     networkRecordingTabId: state.networkRecordingTabId,

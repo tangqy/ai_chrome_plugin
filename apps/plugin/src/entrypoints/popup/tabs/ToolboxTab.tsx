@@ -17,6 +17,7 @@ type Props = {
   onSetNetworkRecording: (enabled: boolean) => void;
   onClearNetworkRecording: () => void;
   onExportNetworkCurl: () => void;
+  onCreateMockFromEntry: (entry: NetworkEntry) => void;
   curlOutput: string;
   onUpsertTask: (name: string, cron: string, script: string) => void;
   onDeleteTask: (id: string) => void;
@@ -34,6 +35,7 @@ export function ToolboxTab(props: Props) {
     onSetNetworkRecording,
     onClearNetworkRecording,
     onExportNetworkCurl,
+    onCreateMockFromEntry,
     curlOutput,
     onUpsertTask,
     onDeleteTask
@@ -66,6 +68,7 @@ export function ToolboxTab(props: Props) {
               onSetNetworkRecording={onSetNetworkRecording}
               onClearNetworkRecording={onClearNetworkRecording}
               onExportNetworkCurl={onExportNetworkCurl}
+              onCreateMockFromEntry={onCreateMockFromEntry}
               curlOutput={curlOutput}
             />
           )
