@@ -27,6 +27,9 @@ type RuntimeStatus = {
   lastDomainSyncResult?: DomainSyncResult | null;
   automationTasks?: AutomationTask[];
   proxyMode?: 'system' | 'direct';
+  networkRecordingEnabled?: boolean;
+  networkRecordingTabId?: number | null;
+  networkEntryCount?: number;
 };
 
 type ConsoleErrorItem = {
@@ -107,6 +110,9 @@ function App() {
   const [taskCron, setTaskCron] = React.useState('*/5 * * * *');
   const [taskScript, setTaskScript] = React.useState("return 'ok';");
   const [proxyMode, setProxyMode] = React.useState<'system' | 'direct'>('system');
+  const [networkRecordingEnabled, setNetworkRecordingEnabled] = React.useState(false);
+  const [networkEntryCount, setNetworkEntryCount] = React.useState(0);
+  const [curlOutput, setCurlOutput] = React.useState('');
 
   const tabOptions = React.useMemo(() => {
     const ids = new Set<string>();
@@ -151,6 +157,8 @@ function App() {
         if (res.payload.proxyMode === 'direct' || res.payload.proxyMode === 'system') {
           setProxyMode(res.payload.proxyMode);
         }
+        setNetworkRecordingEnabled(Boolean(res.payload.networkRecordingEnabled));
+        setNetworkEntryCount(Number(res.payload.networkEntryCount ?? 0));
       }
     } catch {}
   }, []);
@@ -168,6 +176,8 @@ function App() {
           lastDomainSyncResult?: DomainSyncResult | null;
           automationTasks?: AutomationTask[];
           proxyMode?: 'system' | 'direct';
+          networkRecordingEnabled?: boolean;
+          networkEntryCount?: number;
         };
       };
       if (m?.type === 'STATUS_PUSH' && m.payload) {
@@ -184,6 +194,8 @@ function App() {
         if (m.payload.proxyMode === 'direct' || m.payload.proxyMode === 'system') {
           setProxyMode(m.payload.proxyMode);
         }
+        setNetworkRecordingEnabled(Boolean(m.payload.networkRecordingEnabled));
+        setNetworkEntryCount(Number(m.payload.networkEntryCount ?? 0));
       }
     };
     chrome.runtime.onMessage.addListener(listener);
@@ -334,6 +346,23 @@ function App() {
     const res = await chrome.runtime.sendMessage({ type: 'PROXY_SET_MODE', payload: { mode } });
     if (res?.ok && res?.payload?.proxyMode) {
       setProxyMode(res.payload.proxyMode);
+    }
+  };
+
+  const setNetworkRecording = async (enabled: boolean) => {
+    const res = await chrome.runtime.sendMessage({ type: 'NETWORK_RECORDING_SET', payload: { enabled } });
+    if (res?.ok) {
+      setNetworkRecordingEnabled(Boolean(res.payload?.networkRecordingEnabled));
+      setNetworkEntryCount(Number(res.payload?.networkEntryCount ?? 0));
+    }
+  };
+
+  const exportNetworkCurl = async () => {
+    const res = await chrome.runtime.sendMessage({ type: 'NETWORK_RECORDING_EXPORT_CURL' });
+    if (res?.ok && res.payload?.ok) {
+      setCurlOutput(String(res.payload.output ?? ''));
+    } else {
+      setCurlOutput(`导出失败: ${String(res?.error ?? res?.payload?.error ?? 'unknown')}`);
     }
   };
 
@@ -526,6 +555,23 @@ function App() {
                               { label: '直连', value: 'direct' }
                             ]}
                           />
+                          <Divider style={{ margin: '8px 0' }} />
+                          <Typography.Text strong>Network 录制（当前 Tab）</Typography.Text>
+                          <Space>
+                            <Button type={networkRecordingEnabled ? 'default' : 'primary'} onClick={() => void setNetworkRecording(true)}>
+                              开启录制
+                            </Button>
+                            <Button danger={networkRecordingEnabled} onClick={() => void setNetworkRecording(false)}>
+                              关闭录制
+                            </Button>
+                          </Space>
+                          <Typography.Text type="secondary">
+                            状态：{networkRecordingEnabled ? '录制中' : '已关闭'}，记录条数：{networkEntryCount}
+                          </Typography.Text>
+                          <Button onClick={() => void exportNetworkCurl()} block>
+                            导出为 cURL
+                          </Button>
+                          <Input.TextArea value={curlOutput} readOnly autoSize={{ minRows: 4, maxRows: 10 }} placeholder="导出的 cURL 命令会显示在这里" />
                         </Space>
                       )
                     },

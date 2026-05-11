@@ -255,6 +255,50 @@ async fn handle_ws_connection(
                                 });
                                 write.send(Message::Text(resp.to_string())).await?;
                             }
+
+                            if typ == "network_to_curl" {
+                                let entries = value
+                                    .get("payload")
+                                    .and_then(|p| p.get("entries"))
+                                    .and_then(|v| v.as_array())
+                                    .cloned()
+                                    .unwrap_or_default();
+                                let mut lines: Vec<String> = Vec::new();
+                                for item in entries {
+                                    let method = item
+                                        .get("method")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("GET");
+                                    let url = item.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                                    if url.is_empty() {
+                                        continue;
+                                    }
+                                    let mut cmd = format!("curl -X {} '{}'", shell_escape(method), shell_escape(url));
+                                    if let Some(headers) = item.get("headers").and_then(|h| h.as_object()) {
+                                        for (k, v) in headers {
+                                            let vv = v.as_str().unwrap_or("");
+                                            cmd.push_str(&format!(
+                                                " -H '{}: {}'",
+                                                shell_escape(k),
+                                                shell_escape(vv)
+                                            ));
+                                        }
+                                    }
+                                    if let Some(post_data) = item.get("postData").and_then(|v| v.as_str()) {
+                                        if !post_data.is_empty() {
+                                            cmd.push_str(&format!(" --data '{}'", shell_escape(post_data)));
+                                        }
+                                    }
+                                    lines.push(cmd);
+                                }
+                                let resp = serde_json::json!({
+                                    "type": "network_to_curl_result",
+                                    "requestId": request_id,
+                                    "ok": true,
+                                    "output": lines.join("\\n")
+                                });
+                                write.send(Message::Text(resp.to_string())).await?;
+                            }
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => break,
@@ -266,6 +310,10 @@ async fn handle_ws_connection(
     }
 
     Ok(())
+}
+
+fn shell_escape(s: &str) -> String {
+    s.replace('\'', "'\"'\"'")
 }
 
 fn parse_input_line(line: &str) -> Result<BridgeRequest, anyhow::Error> {

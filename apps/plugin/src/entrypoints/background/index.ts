@@ -42,6 +42,17 @@ export default defineBackground(() => {
   };
   let automationTasks: AutomationTask[] = [];
   let proxyMode: 'system' | 'direct' = 'system';
+  type NetworkEntry = {
+    id: string;
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    postData?: string;
+    ts: number;
+  };
+  let networkRecordingEnabled = false;
+  let networkRecordingTabId: number | null = null;
+  let networkEntries: NetworkEntry[] = [];
   let socket: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -65,6 +76,9 @@ export default defineBackground(() => {
       lastDomainSyncResult,
       automationTasks,
       proxyMode,
+      networkRecordingEnabled,
+      networkRecordingTabId,
+      networkEntryCount: networkEntries.length,
       updatedAt: Date.now()
     };
     void chrome.runtime.sendMessage({ type: 'STATUS_PUSH', payload: snapshot }).catch(() => {});
@@ -119,7 +133,12 @@ export default defineBackground(() => {
           bridgeSessions = Array.isArray(msg.sessions) ? msg.sessions : [];
           broadcastSnapshot();
         }
-        if ((msg?.type === 'format_json_result' || msg?.type === 'diff_text_result') && msg?.requestId) {
+        if (
+          (msg?.type === 'format_json_result' ||
+            msg?.type === 'diff_text_result' ||
+            msg?.type === 'network_to_curl_result') &&
+          msg?.requestId
+        ) {
           const record = pendingBridgeCalls.get(String(msg.requestId));
           if (record) {
             clearTimeout(record.timer);
@@ -147,6 +166,39 @@ export default defineBackground(() => {
 
   connectBridge();
   chrome.alarms.create('wujie-ai-automation-tick', { periodInMinutes: 1 });
+  chrome.debugger.onEvent.addListener((source, method, params) => {
+    if (!networkRecordingEnabled) return;
+    if (!source.tabId || source.tabId !== networkRecordingTabId) return;
+    if (method !== 'Network.requestWillBeSent') return;
+    const p = params as {
+      request?: {
+        url?: string;
+        method?: string;
+        headers?: Record<string, unknown>;
+        postData?: string;
+      };
+      requestId?: string;
+    };
+    const request = p?.request;
+    if (!request?.url || !request?.method) return;
+    const headers: Record<string, string> = {};
+    const rawHeaders = request.headers ?? {};
+    for (const key of Object.keys(rawHeaders)) {
+      headers[key] = String(rawHeaders[key]);
+    }
+    networkEntries.push({
+      id: String(p?.requestId ?? `${Date.now()}`),
+      url: String(request.url),
+      method: String(request.method),
+      headers,
+      postData: request.postData ? String(request.postData) : undefined,
+      ts: Date.now()
+    });
+    if (networkEntries.length > 1000) {
+      networkEntries = networkEntries.slice(-1000);
+    }
+    broadcastSnapshot();
+  });
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name !== 'wujie-ai-automation-tick') return;
     const now = new Date();
@@ -220,7 +272,10 @@ export default defineBackground(() => {
           lastSyncResult,
           lastDomainSyncResult,
           automationTasks,
-          proxyMode
+          proxyMode,
+          networkRecordingEnabled,
+          networkRecordingTabId,
+          networkEntryCount: networkEntries.length
         }
       });
       return true;
@@ -248,6 +303,53 @@ export default defineBackground(() => {
         proxyMode = mode;
         sendResponse({ ok: true, payload: { proxyMode } });
       });
+      return true;
+    }
+    if (message?.type === 'NETWORK_RECORDING_SET') {
+      const enabled = Boolean(message?.payload?.enabled);
+      const run = async () => {
+        if (enabled) {
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (!tab?.id) throw new Error('current tab not found');
+          const target = { tabId: tab.id };
+          await chrome.debugger.attach(target, '1.3');
+          await chrome.debugger.sendCommand(target, 'Network.enable');
+          networkRecordingEnabled = true;
+          networkRecordingTabId = tab.id;
+          networkEntries = [];
+        } else {
+          if (networkRecordingTabId !== null) {
+            try {
+              await chrome.debugger.detach({ tabId: networkRecordingTabId });
+            } catch {}
+          }
+          networkRecordingEnabled = false;
+          networkRecordingTabId = null;
+        }
+        broadcastSnapshot();
+        return {
+          ok: true,
+          payload: {
+            networkRecordingEnabled,
+            networkRecordingTabId,
+            networkEntryCount: networkEntries.length
+          }
+        };
+      };
+      void run().then(sendResponse).catch((err) => {
+        sendResponse({ ok: false, error: err instanceof Error ? err.message : 'network recording set failed' });
+      });
+      return true;
+    }
+    if (message?.type === 'NETWORK_RECORDING_EXPORT_CURL') {
+      void callBridge('network_to_curl', { entries: networkEntries })
+        .then((res) => sendResponse({ ok: true, payload: res }))
+        .catch((err) =>
+          sendResponse({
+            ok: false,
+            error: err instanceof Error ? err.message : 'network export failed'
+          })
+        );
       return true;
     }
     if (message?.type === 'AUTOMATION_LIST') {

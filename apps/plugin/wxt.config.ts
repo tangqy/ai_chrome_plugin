@@ -6,7 +6,7 @@ export default defineConfig({
     name: 'Wujie AI Sensing',
     description: 'AI runtime sensing for micro-frontend debugging',
     version: '0.1.0',
-    permissions: ['storage', 'tabs', 'scripting', 'cookies', 'alarms', 'proxy'],
+    permissions: ['storage', 'tabs', 'scripting', 'cookies', 'alarms', 'proxy', 'debugger'],
     host_permissions: ['<all_urls>'],
     content_scripts: [
       {
