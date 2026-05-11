@@ -14,6 +14,8 @@ pub enum BridgeRequest {
     GetConsoleErrors { request_id: String },
     #[serde(rename = "get_sessions")]
     GetSessions { request_id: String },
+    #[serde(rename = "get_status")]
+    GetStatus { request_id: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +41,13 @@ pub struct SessionItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatusItem {
+    pub ts: u64,
+    pub total_errors: usize,
+    pub total_sessions: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum BridgeResponse {
     #[serde(rename = "pong")]
@@ -60,6 +69,11 @@ pub enum BridgeResponse {
         request_id: String,
         count: usize,
         items: Vec<SessionItem>,
+    },
+    #[serde(rename = "status")]
+    Status {
+        request_id: String,
+        status: StatusItem,
     },
     #[serde(rename = "error")]
     Error {

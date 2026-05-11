@@ -62,6 +62,41 @@ export default defineContentScript({
     (document.documentElement || document.head || document.body).appendChild(script);
 
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.type === 'GET_LOCAL_STORAGE_ALL') {
+        try {
+          const data: Record<string, string> = {};
+          for (let i = 0; i < localStorage.length; i += 1) {
+            const key = localStorage.key(i);
+            if (!key) continue;
+            data[key] = localStorage.getItem(key) ?? '';
+          }
+          sendResponse({ ok: true, data, url: location.href });
+        } catch (err) {
+          sendResponse({
+            ok: false,
+            error: err instanceof Error ? err.message : 'read localStorage failed',
+            url: location.href
+          });
+        }
+        return true;
+      }
+      if (message?.type === 'SET_LOCAL_STORAGE_BULK') {
+        try {
+          const entries = (message?.payload?.entries ?? {}) as Record<string, string>;
+          const keys = Object.keys(entries);
+          for (const key of keys) {
+            localStorage.setItem(key, String(entries[key] ?? ''));
+          }
+          sendResponse({ ok: true, count: keys.length, url: location.href });
+        } catch (err) {
+          sendResponse({
+            ok: false,
+            error: err instanceof Error ? err.message : 'bulk set localStorage failed',
+            url: location.href
+          });
+        }
+        return true;
+      }
       if (message?.type === 'SET_LOCAL_STORAGE') {
         try {
           const key = String(message?.payload?.key ?? '');

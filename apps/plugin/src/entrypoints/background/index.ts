@@ -23,9 +23,36 @@ export default defineBackground(() => {
     failed: number;
     at: number;
   } | null = null;
+  let lastDomainSyncResult: {
+    sourceDomain: string;
+    targetUrl: string;
+    localStorageKeys: number;
+    cookiesCopied: number;
+    failed: number;
+    at: number;
+  } | null = null;
+  type AutomationTask = {
+    id: string;
+    name: string;
+    cron: string;
+    script: string;
+    enabled: boolean;
+    lastRunAt?: number;
+    lastResult?: string;
+  };
+  let automationTasks: AutomationTask[] = [];
+  let proxyMode: 'system' | 'direct' = 'system';
   let socket: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
+  const pendingBridgeCalls = new Map<
+    string,
+    {
+      resolve: (value: unknown) => void;
+      reject: (reason?: unknown) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
 
   const broadcastSnapshot = () => {
     const snapshot = {
@@ -35,6 +62,9 @@ export default defineBackground(() => {
       errorItems: consoleErrorItems,
       sessions: bridgeSessions,
       lastSyncResult,
+      lastDomainSyncResult,
+      automationTasks,
+      proxyMode,
       updatedAt: Date.now()
     };
     void chrome.runtime.sendMessage({ type: 'STATUS_PUSH', payload: snapshot }).catch(() => {});
@@ -50,6 +80,21 @@ export default defineBackground(() => {
     }
     socket.send(JSON.stringify(payload));
   };
+
+  const callBridge = (type: string, payload: Record<string, unknown>) =>
+    new Promise<unknown>((resolve, reject) => {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        reject(new Error('bridge socket is not connected'));
+        return;
+      }
+      const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const timer = setTimeout(() => {
+        pendingBridgeCalls.delete(requestId);
+        reject(new Error(`bridge call timeout: ${type}`));
+      }, 5000);
+      pendingBridgeCalls.set(requestId, { resolve, reject, timer });
+      socket.send(JSON.stringify({ type, requestId, payload }));
+    });
 
   const connectBridge = () => {
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
@@ -74,6 +119,14 @@ export default defineBackground(() => {
           bridgeSessions = Array.isArray(msg.sessions) ? msg.sessions : [];
           broadcastSnapshot();
         }
+        if ((msg?.type === 'format_json_result' || msg?.type === 'diff_text_result') && msg?.requestId) {
+          const record = pendingBridgeCalls.get(String(msg.requestId));
+          if (record) {
+            clearTimeout(record.timer);
+            pendingBridgeCalls.delete(String(msg.requestId));
+            record.resolve(msg);
+          }
+        }
       } catch {
         // Ignore invalid bridge message.
       }
@@ -93,6 +146,26 @@ export default defineBackground(() => {
   };
 
   connectBridge();
+  chrome.alarms.create('wujie-ai-automation-tick', { periodInMinutes: 1 });
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name !== 'wujie-ai-automation-tick') return;
+    const now = new Date();
+    for (const task of automationTasks) {
+      if (!task.enabled) continue;
+      if (!cronMatches(task.cron, now)) continue;
+      try {
+        // eslint-disable-next-line no-new-func
+        const fn = new Function(task.script);
+        const result = fn();
+        task.lastRunAt = Date.now();
+        task.lastResult = result === undefined ? 'ok' : String(result);
+      } catch (err) {
+        task.lastRunAt = Date.now();
+        task.lastResult = `error: ${err instanceof Error ? err.message : 'unknown'}`;
+      }
+    }
+    broadcastSnapshot();
+  });
   pollTimer = setInterval(() => {
     sendToBridge({ type: 'get_console_errors', ts: Date.now() });
     broadcastSnapshot();
@@ -144,8 +217,189 @@ export default defineBackground(() => {
           recentConsoleErrorCount,
           errorItems: consoleErrorItems,
           sessions: bridgeSessions,
-          lastSyncResult
+          lastSyncResult,
+          lastDomainSyncResult,
+          automationTasks,
+          proxyMode
         }
+      });
+      return true;
+    }
+    if (message?.type === 'PROXY_SET_MODE') {
+      const mode = message?.payload?.mode === 'direct' ? 'direct' : 'system';
+      const config: chrome.types.ChromeSettingSetDetails<chrome.proxy.ProxyConfig>['value'] =
+        mode === 'direct'
+          ? { mode: 'direct' }
+          : { mode: 'system' };
+      chrome.proxy.settings.set({ value: config, scope: 'regular' }, () => {
+        if (chrome.runtime.lastError) {
+          sendResponse({ ok: false, error: chrome.runtime.lastError.message });
+          return;
+        }
+        proxyMode = mode;
+        broadcastSnapshot();
+        sendResponse({ ok: true, payload: { proxyMode } });
+      });
+      return true;
+    }
+    if (message?.type === 'PROXY_GET_MODE') {
+      chrome.proxy.settings.get({ incognito: false }, (details) => {
+        const mode = details?.value?.mode === 'direct' ? 'direct' : 'system';
+        proxyMode = mode;
+        sendResponse({ ok: true, payload: { proxyMode } });
+      });
+      return true;
+    }
+    if (message?.type === 'AUTOMATION_LIST') {
+      sendResponse({ ok: true, payload: { tasks: automationTasks } });
+      return true;
+    }
+    if (message?.type === 'AUTOMATION_UPSERT') {
+      const payload = message?.payload ?? {};
+      const id = String(payload.id ?? `task-${Date.now()}`);
+      const name = String(payload.name ?? id);
+      const cron = String(payload.cron ?? '* * * * *');
+      const script = String(payload.script ?? 'return "ok";');
+      const enabled = Boolean(payload.enabled ?? true);
+      const idx = automationTasks.findIndex((t) => t.id === id);
+      const next: AutomationTask = { id, name, cron, script, enabled };
+      if (idx >= 0) {
+        automationTasks[idx] = { ...automationTasks[idx], ...next };
+      } else {
+        automationTasks.push(next);
+      }
+      broadcastSnapshot();
+      sendResponse({ ok: true, payload: { tasks: automationTasks } });
+      return true;
+    }
+    if (message?.type === 'AUTOMATION_DELETE') {
+      const id = String(message?.payload?.id ?? '');
+      automationTasks = automationTasks.filter((t) => t.id !== id);
+      broadcastSnapshot();
+      sendResponse({ ok: true, payload: { tasks: automationTasks } });
+      return true;
+    }
+    if (message?.type === 'FORMAT_JSON_FAST') {
+      void callBridge('format_json', { input: String(message?.payload?.input ?? '') })
+        .then((res) => sendResponse({ ok: true, payload: res }))
+        .catch((err) =>
+          sendResponse({
+            ok: false,
+            error: err instanceof Error ? err.message : 'format_json failed'
+          })
+        );
+      return true;
+    }
+    if (message?.type === 'DIFF_TEXT_FAST') {
+      void callBridge('diff_text', {
+        left: String(message?.payload?.left ?? ''),
+        right: String(message?.payload?.right ?? '')
+      })
+        .then((res) => sendResponse({ ok: true, payload: res }))
+        .catch((err) =>
+          sendResponse({
+            ok: false,
+            error: err instanceof Error ? err.message : 'diff_text failed'
+          })
+        );
+      return true;
+    }
+    if (message?.type === 'SYNC_FROM_SOURCE_DOMAIN') {
+      const sourceDomain = String(message?.payload?.sourceDomain ?? '').trim();
+      if (!sourceDomain) {
+        sendResponse({ ok: false, error: 'sourceDomain is required' });
+        return true;
+      }
+
+      const run = async () => {
+        const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!currentTab?.id || !currentTab.url) {
+          throw new Error('current tab not found');
+        }
+        const targetUrl = currentTab.url;
+        const targetHost = new URL(targetUrl).hostname;
+
+        const allTabs = await chrome.tabs.query({});
+        const sourceTab = allTabs.find((tab) => {
+          if (!tab.url) return false;
+          try {
+            const host = new URL(tab.url).hostname;
+            return host.includes(sourceDomain);
+          } catch {
+            return false;
+          }
+        });
+        if (!sourceTab?.id) {
+          throw new Error(`source tab not found for domain: ${sourceDomain}`);
+        }
+
+        let failed = 0;
+        let localStorageKeys = 0;
+        let cookiesCopied = 0;
+
+        const localStorageRes = await chrome.tabs.sendMessage(sourceTab.id, {
+          type: 'GET_LOCAL_STORAGE_ALL'
+        });
+        const entries = (localStorageRes?.data ?? {}) as Record<string, string>;
+        localStorageKeys = Object.keys(entries).length;
+
+        try {
+          const writeRes = await chrome.tabs.sendMessage(currentTab.id, {
+            type: 'SET_LOCAL_STORAGE_BULK',
+            payload: { entries }
+          });
+          if (!writeRes?.ok) {
+            failed += 1;
+          }
+        } catch {
+          failed += 1;
+        }
+
+        const sourceCookies = await chrome.cookies.getAll({ domain: sourceDomain });
+        for (const cookie of sourceCookies) {
+          try {
+            const sameSite =
+              cookie.sameSite === 'strict'
+                ? 'strict'
+                : cookie.sameSite === 'lax'
+                  ? 'lax'
+                  : cookie.sameSite === 'no_restriction'
+                    ? 'no_restriction'
+                    : undefined;
+            await chrome.cookies.set({
+              url: targetUrl,
+              name: cookie.name,
+              value: cookie.value,
+              path: cookie.path,
+              secure: cookie.secure,
+              httpOnly: cookie.httpOnly,
+              sameSite,
+              expirationDate: cookie.expirationDate,
+              domain: targetHost
+            });
+            cookiesCopied += 1;
+          } catch {
+            failed += 1;
+          }
+        }
+
+        lastDomainSyncResult = {
+          sourceDomain,
+          targetUrl,
+          localStorageKeys,
+          cookiesCopied,
+          failed,
+          at: Date.now()
+        };
+        broadcastSnapshot();
+        return { ok: true, payload: lastDomainSyncResult };
+      };
+
+      void run().then(sendResponse).catch((err) => {
+        sendResponse({
+          ok: false,
+          error: err instanceof Error ? err.message : 'domain sync failed'
+        });
       });
       return true;
     }
@@ -222,3 +476,27 @@ export default defineBackground(() => {
     return false;
   });
 });
+
+function cronMatches(cron: string, now: Date): boolean {
+  const parts = cron.trim().split(/\s+/);
+  if (parts.length !== 5) return false;
+  const [min, hour, day, mon, week] = parts;
+  return (
+    partMatches(min, now.getMinutes()) &&
+    partMatches(hour, now.getHours()) &&
+    partMatches(day, now.getDate()) &&
+    partMatches(mon, now.getMonth() + 1) &&
+    partMatches(week, now.getDay())
+  );
+}
+
+function partMatches(expr: string, value: number): boolean {
+  if (expr === '*') return true;
+  if (/^\d+$/.test(expr)) return Number(expr) === value;
+  if (/^\*\/\d+$/.test(expr)) {
+    const step = Number(expr.slice(2));
+    return step > 0 && value % step === 0;
+  }
+  const list = expr.split(',');
+  return list.some((item) => /^\d+$/.test(item) && Number(item) === value);
+}

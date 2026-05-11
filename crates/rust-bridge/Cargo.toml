@@ -11,3 +11,4 @@ tokio = { workspace = true, features = ["io-std"] }
 rust-shared = { path = "../rust-shared" }
 futures-util = "0.3"
 tokio-tungstenite = "0.24"
+similar = "2.7"

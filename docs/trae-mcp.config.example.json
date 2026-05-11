@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "wujie-bridge": {
+      "command": "cargo",
+      "args": ["run", "-p", "rust-bridge"],
+      "cwd": "/Users/tqy/private/ai_test/ai_chrome_plugin"
+    }
+  }
+}

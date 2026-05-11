@@ -1,37 +1,25 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::Arc;
-use std::collections::HashMap;
 
 use futures_util::{SinkExt, StreamExt};
-use rust_shared::protocol::{BridgeRequest, BridgeResponse, ConsoleErrorItem, SessionItem};
+use rust_shared::protocol::{BridgeRequest, BridgeResponse};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
 use tokio::time::{interval, Duration};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
-use serde::{Deserialize, Serialize};
+use similar::TextDiff;
+mod mcp_tools;
+mod nl_parser;
+mod session;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct ConsoleErrorEvent {
-    message: String,
-    url: Option<String>,
-    tab_id: Option<i32>,
-    ts: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct SessionInfo {
-    tab_id: i32,
-    url: String,
-    last_seen_ts: u64,
-    error_count: u64,
-}
+use session::{ConsoleErrorEvent, SessionInfo, SharedErrors, SharedPrintHash, SharedSessions};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let errors = Arc::new(Mutex::new(Vec::<ConsoleErrorEvent>::new()));
-    let sessions = Arc::new(Mutex::new(HashMap::<i32, SessionInfo>::new()));
-    let last_print_hash = Arc::new(Mutex::new(String::new()));
+    let errors: SharedErrors = Arc::new(Mutex::new(Vec::<ConsoleErrorEvent>::new()));
+    let sessions: SharedSessions = Arc::new(Mutex::new(std::collections::HashMap::<i32, SessionInfo>::new()));
+    let last_print_hash: SharedPrintHash = Arc::new(Mutex::new(String::new()));
 
     let ws_errors = errors.clone();
     let ws_sessions = sessions.clone();
@@ -47,7 +35,7 @@ async fn main() -> anyhow::Result<()> {
     let mut stdout = io::stdout();
 
     while let Some(line) = lines.next_line().await? {
-        let req: BridgeRequest = match serde_json::from_str(&line) {
+        let req: BridgeRequest = match parse_input_line(&line) {
             Ok(v) => v,
             Err(err) => {
                 let fallback = BridgeResponse::Error {
@@ -63,53 +51,7 @@ async fn main() -> anyhow::Result<()> {
             }
         };
 
-        let resp = match req {
-            BridgeRequest::Ping { request_id } => BridgeResponse::Pong {
-                request_id,
-                ts: now_ms(),
-            },
-            BridgeRequest::SyncData { request_id, .. } => BridgeResponse::SyncResult {
-                request_id,
-                ok: true,
-                count: 0,
-            },
-            BridgeRequest::GetConsoleErrors { request_id } => {
-                let guard = errors.lock().await;
-                let items = guard
-                    .iter()
-                    .rev()
-                    .take(50)
-                    .map(|e| ConsoleErrorItem {
-                        message: e.message.clone(),
-                        url: e.url.clone(),
-                        tab_id: e.tab_id,
-                        ts: e.ts,
-                    })
-                    .collect::<Vec<_>>();
-                BridgeResponse::ConsoleErrors {
-                    request_id,
-                    count: guard.len(),
-                    items,
-                }
-            }
-            BridgeRequest::GetSessions { request_id } => {
-                let guard = sessions.lock().await;
-                let items = guard
-                    .values()
-                    .map(|s| SessionItem {
-                        tab_id: s.tab_id,
-                        url: s.url.clone(),
-                        last_seen_ts: s.last_seen_ts,
-                        error_count: s.error_count,
-                    })
-                    .collect::<Vec<_>>();
-                BridgeResponse::Sessions {
-                    request_id,
-                    count: items.len(),
-                    items,
-                }
-            }
-        };
+        let resp = mcp_tools::handle_request(req, errors.clone(), sessions.clone(), now_ms()).await;
 
         stdout
             .write_all(format!("{}\n", serde_json::to_string(&resp)?).as_bytes())
@@ -121,9 +63,9 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn run_ws_server(
-    errors: Arc<Mutex<Vec<ConsoleErrorEvent>>>,
-    sessions: Arc<Mutex<HashMap<i32, SessionInfo>>>,
-    last_print_hash: Arc<Mutex<String>>,
+    errors: SharedErrors,
+    sessions: SharedSessions,
+    last_print_hash: SharedPrintHash,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:8787").await?;
     loop {
@@ -141,9 +83,9 @@ async fn run_ws_server(
 
 async fn handle_ws_connection(
     stream: TcpStream,
-    errors: Arc<Mutex<Vec<ConsoleErrorEvent>>>,
-    sessions: Arc<Mutex<HashMap<i32, SessionInfo>>>,
-    last_print_hash: Arc<Mutex<String>>,
+    errors: SharedErrors,
+    sessions: SharedSessions,
+    last_print_hash: SharedPrintHash,
 ) -> anyhow::Result<()> {
     let ws_stream = accept_async(stream).await?;
     let (mut write, mut read) = ws_stream.split();
@@ -165,6 +107,11 @@ async fn handle_ws_connection(
 
                         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
                             let typ = value.get("type").and_then(|v| v.as_str()).unwrap_or_default();
+                            let request_id = value
+                                .get("requestId")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
 
                             if typ == "console_error" {
                                 let payload = value.get("payload").cloned().unwrap_or_default();
@@ -261,6 +208,53 @@ async fn handle_ws_connection(
                                 });
                                 write.send(Message::Text(resp.to_string())).await?;
                             }
+
+                            if typ == "format_json" {
+                                let input = value
+                                    .get("payload")
+                                    .and_then(|p| p.get("input"))
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                let resp = match serde_json::from_str::<serde_json::Value>(input) {
+                                    Ok(v) => serde_json::json!({
+                                        "type": "format_json_result",
+                                        "requestId": request_id,
+                                        "ok": true,
+                                        "output": serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
+                                    }),
+                                    Err(err) => serde_json::json!({
+                                        "type": "format_json_result",
+                                        "requestId": request_id,
+                                        "ok": false,
+                                        "error": err.to_string()
+                                    }),
+                                };
+                                write.send(Message::Text(resp.to_string())).await?;
+                            }
+
+                            if typ == "diff_text" {
+                                let left = value
+                                    .get("payload")
+                                    .and_then(|p| p.get("left"))
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                let right = value
+                                    .get("payload")
+                                    .and_then(|p| p.get("right"))
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                let diff = TextDiff::from_lines(left, right)
+                                    .unified_diff()
+                                    .header("left", "right")
+                                    .to_string();
+                                let resp = serde_json::json!({
+                                    "type": "diff_text_result",
+                                    "requestId": request_id,
+                                    "ok": true,
+                                    "output": diff
+                                });
+                                write.send(Message::Text(resp.to_string())).await?;
+                            }
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => break,
@@ -272,6 +266,19 @@ async fn handle_ws_connection(
     }
 
     Ok(())
+}
+
+fn parse_input_line(line: &str) -> Result<BridgeRequest, anyhow::Error> {
+    if let Ok(req) = serde_json::from_str::<BridgeRequest>(line) {
+        return Ok(req);
+    }
+
+    let request_id = format!("nl-{}", now_ms());
+    if let Some(req) = nl_parser::parse_natural_language(line, request_id) {
+        return Ok(req);
+    }
+
+    Err(anyhow::anyhow!("unsupported input"))
 }
 
 fn now_ms() -> u64 {
