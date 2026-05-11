@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import {
+  Collapse,
   Button,
   Card,
   Descriptions,
@@ -8,6 +9,7 @@ import {
   List,
   Select,
   Space,
+  Divider,
   Tabs,
   Tag,
   Typography
@@ -97,6 +99,8 @@ function App() {
   const [diffLeft, setDiffLeft] = React.useState('line1\nline2\nline3');
   const [diffRight, setDiffRight] = React.useState('line1\nlineX\nline3');
   const [diffOutput, setDiffOutput] = React.useState('');
+  const [leftFileName, setLeftFileName] = React.useState('');
+  const [rightFileName, setRightFileName] = React.useState('');
   const [tsInput, setTsInput] = React.useState(String(Date.now()));
   const [timeOutput, setTimeOutput] = React.useState('');
   const [taskName, setTaskName] = React.useState('demo-task');
@@ -271,6 +275,37 @@ function App() {
       if (res?.ok && res.payload?.ok) setDiffOutput(String(res.payload.output ?? ''));
     } catch {}
   };
+  const diffLines = React.useMemo(() => diffOutput.split('\n'), [diffOutput]);
+
+  const readFileText = async (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result ?? ''));
+      reader.onerror = () => reject(new Error('读取文件失败'));
+      reader.readAsText(file);
+    });
+
+  const onPickLeftFile = async (ev: React.ChangeEvent<HTMLInputElement>) => {
+    const file = ev.target.files?.[0];
+    if (!file) return;
+    setLeftFileName(file.name);
+    try {
+      setDiffLeft(await readFileText(file));
+    } catch {
+      setLeftFileName(`${file.name} (读取失败)`);
+    }
+  };
+
+  const onPickRightFile = async (ev: React.ChangeEvent<HTMLInputElement>) => {
+    const file = ev.target.files?.[0];
+    if (!file) return;
+    setRightFileName(file.name);
+    try {
+      setDiffRight(await readFileText(file));
+    } catch {
+      setRightFileName(`${file.name} (读取失败)`);
+    }
+  };
 
   const convertTime = () => {
     const num = Number(tsInput);
@@ -397,82 +432,133 @@ function App() {
               key: 'tools',
               label: '工具箱',
               children: (
-                <Space direction="vertical" size={10} style={{ width: '100%' }}>
-                  <Card size="small" title="Unicode -> 中文">
-                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                      <Input.TextArea value={unicodeInput} onChange={(e) => setUnicodeInput(e.target.value)} autoSize={{ minRows: 2, maxRows: 4 }} />
-                      <Button onClick={decodeUnicode} block>转换</Button>
-                      <Input.TextArea value={unicodeOutput} readOnly autoSize={{ minRows: 2, maxRows: 4 }} />
-                    </Space>
-                  </Card>
-                  <Card size="small" title="网站二维码（离线）">
-                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                      <Input value={qrUrl} onChange={(e) => setQrUrl(e.target.value)} placeholder="https://..." />
-                      {qrDataUrl ? (
-                        <img alt="qr" src={qrDataUrl} style={{ width: 180, height: 180, border: '1px solid #eee' }} />
-                      ) : (
-                        <Typography.Text type="secondary">二维码生成失败</Typography.Text>
-                      )}
-                    </Space>
-                  </Card>
-                  <Card size="small" title="JSON 格式化（离线优先，桥接增强）">
-                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                      <Input.TextArea value={jsonInput} onChange={(e) => setJsonInput(e.target.value)} autoSize={{ minRows: 4, maxRows: 8 }} />
-                      <Input.TextArea value={jsonOutput} readOnly autoSize={{ minRows: 4, maxRows: 10 }} />
-                    </Space>
-                  </Card>
-                  <Card size="small" title="文件 Diff（离线优先，桥接增强）">
-                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                      <Input.TextArea value={diffLeft} onChange={(e) => setDiffLeft(e.target.value)} autoSize={{ minRows: 3, maxRows: 8 }} placeholder="左侧内容" />
-                      <Input.TextArea value={diffRight} onChange={(e) => setDiffRight(e.target.value)} autoSize={{ minRows: 3, maxRows: 8 }} placeholder="右侧内容" />
-                      <Button onClick={() => void diffFast()} block>执行 Diff</Button>
-                      <Input.TextArea value={diffOutput} readOnly autoSize={{ minRows: 4, maxRows: 10 }} />
-                    </Space>
-                  </Card>
-                  <Card size="small" title="自动化任务（Cron + JS）">
-                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                      <Input value={taskName} onChange={(e) => setTaskName(e.target.value)} placeholder="任务名" />
-                      <Input value={taskCron} onChange={(e) => setTaskCron(e.target.value)} placeholder="cron: */5 * * * *" />
-                      <Input.TextArea value={taskScript} onChange={(e) => setTaskScript(e.target.value)} autoSize={{ minRows: 2, maxRows: 5 }} placeholder="return 'ok';" />
-                      <Button onClick={() => void upsertTask()} block>保存任务</Button>
-                      <List
-                        size="small"
-                        dataSource={automationTasks}
-                        locale={{ emptyText: '暂无任务' }}
-                        renderItem={(task) => (
-                          <List.Item actions={[<a key="del" onClick={() => void deleteTask(task.id)}>删除</a>]}> 
-                            <Space direction="vertical" size={1}>
-                              <Typography.Text strong>{task.name}</Typography.Text>
-                              <Typography.Text type="secondary">{task.cron} | {task.lastRunAt ? new Date(task.lastRunAt).toLocaleTimeString() : '-'}</Typography.Text>
-                              <Typography.Text type="secondary">{task.lastResult ?? '-'}</Typography.Text>
-                            </Space>
-                          </List.Item>
-                        )}
-                      />
-                    </Space>
-                  </Card>
-                  <Card size="small" title="时间工具">
-                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                      <Button onClick={() => setTsInput(String(Date.now()))} block>获取当前时间戳</Button>
-                      <Input value={tsInput} onChange={(e) => setTsInput(e.target.value)} placeholder="输入时间戳（秒/毫秒）" />
-                      <Button onClick={convertTime} block>时间戳转换</Button>
-                      <Input.TextArea value={timeOutput} readOnly autoSize={{ minRows: 2, maxRows: 4 }} />
-                    </Space>
-                  </Card>
-                  <Card size="small" title="代理切换">
-                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                      <Typography.Text type="secondary">当前模式：{proxyMode === 'direct' ? '直连' : '系统代理'}</Typography.Text>
-                      <Select
-                        value={proxyMode}
-                        onChange={(v) => void setProxy(v)}
-                        options={[
-                          { label: '系统代理', value: 'system' },
-                          { label: '直连', value: 'direct' }
-                        ]}
-                      />
-                    </Space>
-                  </Card>
-                </Space>
+                <Collapse
+                  size="small"
+                  items={[
+                    {
+                      key: 'text-tools',
+                      label: '文本工具（Unicode / JSON）',
+                      children: (
+                        <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                          <Typography.Text strong>Unicode 转中文</Typography.Text>
+                          <Input.TextArea value={unicodeInput} onChange={(e) => setUnicodeInput(e.target.value)} autoSize={{ minRows: 2, maxRows: 4 }} />
+                          <Button onClick={decodeUnicode} block>转换</Button>
+                          <Input.TextArea value={unicodeOutput} readOnly autoSize={{ minRows: 2, maxRows: 4 }} />
+                          <Divider style={{ margin: '8px 0' }} />
+                          <Typography.Text strong>JSON 格式化（离线优先，桥接增强）</Typography.Text>
+                          <Input.TextArea value={jsonInput} onChange={(e) => setJsonInput(e.target.value)} autoSize={{ minRows: 4, maxRows: 8 }} />
+                          <Input.TextArea value={jsonOutput} readOnly autoSize={{ minRows: 4, maxRows: 10 }} />
+                        </Space>
+                      )
+                    },
+                    {
+                      key: 'diff-tool',
+                      label: 'Diff 对比（Git 风格）',
+                      children: (
+                        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                          <Space style={{ width: '100%' }} direction="vertical" size={4}>
+                            <Typography.Text type="secondary">左文件：{leftFileName || '未选择'}</Typography.Text>
+                            <Input type="file" onChange={(e) => void onPickLeftFile(e)} />
+                            <Typography.Text type="secondary">右文件：{rightFileName || '未选择'}</Typography.Text>
+                            <Input type="file" onChange={(e) => void onPickRightFile(e)} />
+                          </Space>
+                          <Input.TextArea value={diffLeft} onChange={(e) => setDiffLeft(e.target.value)} autoSize={{ minRows: 3, maxRows: 8 }} placeholder="左侧内容" />
+                          <Input.TextArea value={diffRight} onChange={(e) => setDiffRight(e.target.value)} autoSize={{ minRows: 3, maxRows: 8 }} placeholder="右侧内容" />
+                          <Button onClick={() => void diffFast()} block>执行 Diff</Button>
+                          <div
+                            style={{
+                              border: '1px solid #e5e7eb',
+                              borderRadius: 8,
+                              background: '#fafafa',
+                              maxHeight: 240,
+                              overflow: 'auto',
+                              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                              fontSize: 12
+                            }}
+                          >
+                            {diffLines.map((line, idx) => {
+                              const isAdd = line.startsWith('+');
+                              const isDel = line.startsWith('-');
+                              return (
+                                <div
+                                  key={`${idx}-${line}`}
+                                  style={{
+                                    padding: '2px 8px',
+                                    whiteSpace: 'pre-wrap',
+                                    background: isAdd ? '#ecfdf3' : isDel ? '#fef2f2' : 'transparent',
+                                    color: isAdd ? '#166534' : isDel ? '#991b1b' : '#111827'
+                                  }}
+                                >
+                                  {line || ' '}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </Space>
+                      )
+                    },
+                    {
+                      key: 'utility-tools',
+                      label: '实用工具（二维码 / 时间 / 代理）',
+                      children: (
+                        <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                          <Typography.Text strong>网站二维码（离线）</Typography.Text>
+                          <Input value={qrUrl} onChange={(e) => setQrUrl(e.target.value)} placeholder="https://..." />
+                          {qrDataUrl ? (
+                            <img alt="qr" src={qrDataUrl} style={{ width: 180, height: 180, border: '1px solid #eee' }} />
+                          ) : (
+                            <Typography.Text type="secondary">二维码生成失败</Typography.Text>
+                          )}
+                          <Divider style={{ margin: '8px 0' }} />
+                          <Typography.Text strong>时间工具</Typography.Text>
+                          <Button onClick={() => setTsInput(String(Date.now()))} block>获取当前时间戳</Button>
+                          <Input value={tsInput} onChange={(e) => setTsInput(e.target.value)} placeholder="输入时间戳（秒/毫秒）" />
+                          <Button onClick={convertTime} block>时间戳转换</Button>
+                          <Input.TextArea value={timeOutput} readOnly autoSize={{ minRows: 2, maxRows: 4 }} />
+                          <Divider style={{ margin: '8px 0' }} />
+                          <Typography.Text strong>代理切换</Typography.Text>
+                          <Typography.Text type="secondary">当前模式：{proxyMode === 'direct' ? '直连' : '系统代理'}</Typography.Text>
+                          <Select
+                            value={proxyMode}
+                            onChange={(v) => void setProxy(v)}
+                            options={[
+                              { label: '系统代理', value: 'system' },
+                              { label: '直连', value: 'direct' }
+                            ]}
+                          />
+                        </Space>
+                      )
+                    },
+                    {
+                      key: 'automation-tools',
+                      label: '自动化任务（Cron + JS）',
+                      children: (
+                        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                          <Input value={taskName} onChange={(e) => setTaskName(e.target.value)} placeholder="任务名" />
+                          <Input value={taskCron} onChange={(e) => setTaskCron(e.target.value)} placeholder="cron: */5 * * * *" />
+                          <Input.TextArea value={taskScript} onChange={(e) => setTaskScript(e.target.value)} autoSize={{ minRows: 2, maxRows: 5 }} placeholder="return 'ok';" />
+                          <Button onClick={() => void upsertTask()} block>保存任务</Button>
+                          <List
+                            size="small"
+                            dataSource={automationTasks}
+                            locale={{ emptyText: '暂无任务' }}
+                            renderItem={(task) => (
+                              <List.Item actions={[<a key="del" onClick={() => void deleteTask(task.id)}>删除</a>]}>
+                                <Space direction="vertical" size={1}>
+                                  <Typography.Text strong>{task.name}</Typography.Text>
+                                  <Typography.Text type="secondary">
+                                    {task.cron} | {task.lastRunAt ? new Date(task.lastRunAt).toLocaleTimeString() : '-'}
+                                  </Typography.Text>
+                                  <Typography.Text type="secondary">{task.lastResult ?? '-'}</Typography.Text>
+                                </Space>
+                              </List.Item>
+                            )}
+                          />
+                        </Space>
+                      )
+                    }
+                  ]}
+                />
               )
             }
           ]}
