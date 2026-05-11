@@ -1,18 +1,43 @@
 # Wujie AI Sensing Monorepo
 
-技术栈：
-- React
-- Rust
-- pnpm workspace
-- WXT
-- Vite 8（由 WXT 驱动）
+基于 **React + Rust + pnpm + WXT + Vite 8** 的无界前端 AI 感知系统。
+
+## 技术栈
+
+- 前端插件：React + Ant Design + WXT + Vite 8
+- 本地桥接：Rust（MCP/stdio + WebSocket）
+- 共享逻辑：Rust shared crate + TypeScript protocol package
+- 工程管理：pnpm workspace（Monorepo）
 
 ## 目录结构
 
-- `apps/plugin`：基于 WXT + React 的 Chrome 插件。
-- `crates/rust-bridge`：Rust MCP 本地桥接服务（二进制）。
-- `crates/rust-shared`：Rust 共享协议库。
-- `packages/protocol-ts`：TypeScript 协议定义。
+- `apps/plugin`：Chrome 插件（WXT）
+- `crates/rust-bridge`：本地 bridge 服务（Rust）
+- `crates/rust-shared`：Rust 共享协议和逻辑
+- `packages/protocol-ts`：TS 协议定义
+- `docs/trae-mcp.config.example.json`：Trae MCP 配置示例
+
+## 插件前端模块划分
+
+Popup 采用分模块组织，避免单文件过大（核心文件控制在 300 行以内）：
+
+- `popup/main.tsx`：页面组装与跨 tab 状态编排
+- `popup/tabs/ObserveTab.tsx`：观测面板（连接状态、错误日志、会话）
+- `popup/tabs/SyncTab.tsx`：域名同步面板
+- `popup/tabs/ToolboxTab.tsx`：工具箱入口（折叠分组）
+- `popup/components/toolbox/TextToolsSection.tsx`：Unicode / JSON
+- `popup/components/toolbox/DiffSection.tsx`：Git 风格 Diff
+- `popup/components/toolbox/UtilitySection.tsx`：二维码 / 时间 / 代理 / Network
+- `popup/components/toolbox/AutomationSection.tsx`：Cron 自动化
+
+Background 也已模块化拆分：
+
+- `background/index.ts`：消息分发和主流程
+- `background/bridge.ts`：bridge 连接与转发
+- `background/network.ts`：network 录制管理
+- `background/cron.ts`：自动化任务调度
+- `background/operations.ts`：业务操作函数集合
+- `background/state.ts`：运行时状态
 
 ## 快速开始
 
@@ -21,16 +46,17 @@ pnpm install
 pnpm dev
 ```
 
-在另一个终端运行：
+另开一个终端启动 bridge：
 
 ```bash
 cargo run -p rust-bridge
 ```
 
-## 验证
+## 验证命令
 
 ```bash
 pnpm -r typecheck
+pnpm --filter @wujie/plugin build
 cargo check
 ```
 
@@ -40,64 +66,55 @@ cargo check
 
 1. 启动 bridge：`cargo run -p rust-bridge`
 2. 启动插件开发：`pnpm --filter @wujie/plugin dev`
-3. 在 Chrome 扩展页重载插件。
-4. 打开任意 `http/https` 页面，执行：
+3. 在 Chrome 扩展页重载插件
+4. 打开任意 `http/https` 页面执行：
    - `console.error('bridge test', Date.now())`
 5. 打开插件 `观测面板`，确认：
    - `WS Connected` 为 `Connected`
-   - `Latest Errors` 有新增日志
-   - `Bridge Sessions` 能看到当前 tab 会话
+   - `Latest Errors` 出现新增日志
+   - `Bridge Sessions` 出现当前 tab 会话
 
 ### 2) 同步数据验证（源域名 -> 当前页面）
 
 1. 同时打开两个页面：
-   - 源页面：域名包含你输入的 `sourceDomain`（例如 `react_web`）
-   - 目标页面：当前活动 tab（即你要写入的页面）
-2. 在插件 `同步数据` Tab 输入源域名，点击：
-   - `同步源域名数据到当前页面`
-3. 预期结果：
-   - 显示 `localStorage Keys`（同步到目标页的 key 数）
-   - 显示 `Cookies Copied`（复制到目标域的 cookie 数）
-   - `Failed` 为 0 或较小（受浏览器 cookie 策略影响）
+   - 源页面：域名包含输入的 `sourceDomain`（例如 `react_web`）
+   - 目标页面：当前激活 tab（写入目标）
+2. 在 `同步数据` Tab 输入源域名，点击 `同步源域名数据到当前页面`
+3. 预期：
+   - `localStorage Keys` 显示同步键数量
+   - `Cookies Copied` 显示复制 cookie 数量
+   - `Failed` 为 0 或较小（受浏览器策略影响）
 
-### 3) 工具箱验证（含 Rust 加速）
+### 3) 工具箱验证
 
-在 `工具箱` Tab 验证以下功能：
+工具箱采用按需折叠分组展示，避免大段罗列。
 
-1. `Unicode -> 中文`
-   - 输入：`\\u4f60\\u597d`
-   - 预期输出：`你好`
+1. 文本工具（Unicode / JSON）
+   - 输入 `\\u4f60\\u597d`，转换后应为 `你好`
+   - JSON 输入合法时输出格式化结果，非法时提示错误
 
-2. `JSON 格式化（Rust）`
-   - 输入合法 JSON（如 `{\"a\":1,\"b\":[2,3]}`）
-   - 预期输出：格式化后的多行 JSON
-   - 输入非法 JSON，预期输出错误提示
-
-3. `文件 Diff 对比（Rust + similar）`
+2. Diff 对比（Git 风格）
    - 左右输入不同文本，点击 `执行 Diff`
-   - 预期输出 unified diff（含 `-` / `+` 变更行）
+   - 结果区域应有 `+/-` 高亮行
 
-4. `网站二维码`
-   - 输入 URL（如 `https://example.com`）
-   - 预期显示对应二维码图片
+3. 实用工具
+   - 二维码：输入 URL 后展示二维码
+   - 时间：可获取当前时间戳并互转
+   - 代理：可切换 `系统代理 / 直连`
+   - Network：可开关录制并导出 cURL
 
-5. `时间工具`
-   - 点击 `获取当前时间戳`
-   - 再点击 `时间戳转换`
-   - 预期显示 ISO 时间和本地时间
+4. 自动化任务（Cron + JS）
+   - 示例：`*/1 * * * *` + `return 'ok';`
+   - 预期任务列表出现 `lastRunAt` 和 `lastResult`
 
-### 4) 自动化任务验证（Cron + JS）
+### 4) Network 录制导出 cURL 验证
 
-1. 在 `工具箱 -> 自动化任务` 中填写：
-   - 任务名：`demo-task`
-   - Cron：`*/1 * * * *`
-   - 脚本：`return 'ok';`
-2. 点击 `保存任务`
-3. 等待 1 分钟左右，预期：
-   - 任务列表显示 `lastRunAt`
-   - `lastResult` 为 `ok`
+1. 在工具箱开启 `Network 录制`
+2. 在当前页面执行若干 XHR/fetch 或刷新触发请求
+3. 点击 `导出为 cURL`
+4. 预期输出包含可执行 cURL 命令（多条请求逐条输出）
 
-## Stdio MCP 请求示例
+## Stdio MCP 示例（可直接复制）
 
 先启动 bridge：
 
@@ -105,7 +122,7 @@ cargo check
 cargo run -p rust-bridge
 ```
 
-然后向标准输入发送 JSON 行：
+向 bridge 的 stdin 输入 JSON 行：
 
 ```json
 {"type":"ping","request_id":"req-1"}
@@ -123,7 +140,9 @@ cargo run -p rust-bridge
 - `sync_result`
 - `error`（输入非法时）
 
-也支持自然语言兜底（非 JSON 输入）：
+## 自然语言调用（轻量映射）
+
+bridge 支持自然语言兜底，不强依赖 LLM：
 
 - `勇哥，帮我获取当前控制台日志`
 - `勇哥，查看当前会话`
@@ -132,30 +151,13 @@ cargo run -p rust-bridge
 - `勇哥，同步 key=foo value=bar`
 
 说明：
-- 自然语言会被 bridge 按关键词映射到 `get_console_errors / get_sessions / get_status / ping`。
-- `sync_data` 支持轻量参数语法：`同步 key=xxx value=yyy`。
-- 如未提供 `key/value`，会使用默认值：`wujie-ai-sync-key / demo-value`。
+- 自然语言会被映射到 `get_console_errors/get_sessions/get_status/ping/sync_data`
+- `sync_data` 支持轻量参数语法：`key=xxx value=yyy`
+- 缺省参数：`wujie-ai-sync-key / demo-value`
 
-## 端到端联调流程
+## Trae 中接入 MCP
 
-1. 启动 bridge：`cargo run -p rust-bridge`
-2. 启动插件开发：`pnpm --filter @wujie/plugin dev`
-3. 在 Chrome 扩展页重载插件。
-4. 打开任意页面并执行：
-   - `console.error('bridge test', Date.now())`
-5. 打开插件 popup，确认：
-   - `WS Connected`
-   - `Latest Errors`
-   - `Bridge Sessions`
-6. 使用 `Sync Data` 卡片向当前 tab 或全部 tab 写入 localStorage。
-
-## Trae MCP 接入
-
-可直接参考示例配置文件：
-
-- `docs/trae-mcp.config.example.json`
-
-示例内容：
+示例配置文件：`docs/trae-mcp.config.example.json`
 
 ```json
 {
@@ -171,26 +173,30 @@ cargo run -p rust-bridge
 
 接入步骤：
 
-1. 打开 Trae 的 MCP 设置。
-2. 新增一个 stdio MCP Server，名称填 `wujie-bridge`。
-3. 将示例里的 `command / args / cwd` 复制进去。
-4. 保存并重载 MCP Server。
-5. 用以下请求验证：
+1. 打开 Trae 的 MCP 设置
+2. 新增 stdio MCP Server，名称 `wujie-bridge`
+3. 填入 `command/args/cwd`
+4. 保存并重载 MCP Server
+5. 在 Trae 中发送测试：
    - `{"type":"ping","request_id":"req-ping"}`
    - `{"type":"get_status","request_id":"req-status"}`
 
-如果 `get_status` 能返回 `total_sessions` 和 `total_errors`，说明 bridge 已接通。
+若 `get_status` 返回 `total_sessions` 与 `total_errors`，表示接入成功。
 
-## 常见问题排查
+## 常见问题
 
-- `command not found: cargo`
-  - 确认 Trae 使用的是和你终端一致的 shell 环境。
+- `bridge 无输出`
+  - 先确认你是在 `http/https` 页面触发 `console.error`，不是浏览器内部页
+  - 再确认插件已重载，且 popup 显示 `WS Connected`
 
-- bridge 启动了但没有页面数据
-  - 重载插件并刷新页面一次。
+- CSP 报错 `page-hook.js` 无法加载
+  - 确认该文件已在 `web_accessible_resources` 中配置
 
-- popup 显示 `WS disconnected`
-  - 确认 `cargo run -p rust-bridge` 进程仍在运行。
+- `WS disconnected`
+  - 确认 `cargo run -p rust-bridge` 进程仍在运行
 
-- 看不到 console 错误
-  - 请在 `http/https` 页面执行 `console.error('bridge test', Date.now())`（不要在浏览器内部页测试）。
+- `cargo command not found`（Trae 内）
+  - 确认 Trae 使用的 shell 环境包含 Rust 工具链路径
+
+
+补充：Diff 支持选择两个本地文件并进行高亮对比。
