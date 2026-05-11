@@ -1,6 +1,6 @@
 import React from 'react';
 import { Collapse } from 'antd';
-import type { AutomationTask } from '../types';
+import type { AutomationTask, NetworkEntry } from '../types';
 import { TextToolsSection } from '../components/toolbox/TextToolsSection';
 import { DiffSection } from '../components/toolbox/DiffSection';
 import { UtilitySection } from '../components/toolbox/UtilitySection';
@@ -11,9 +11,11 @@ type Props = {
   proxyMode: 'system' | 'direct';
   networkRecordingEnabled: boolean;
   networkEntryCount: number;
+  networkEntries: NetworkEntry[];
   automationTasks: AutomationTask[];
   onSetProxy: (mode: 'system' | 'direct') => void;
   onSetNetworkRecording: (enabled: boolean) => void;
+  onClearNetworkRecording: () => void;
   onExportNetworkCurl: () => void;
   curlOutput: string;
   onUpsertTask: (name: string, cron: string, script: string) => void;
@@ -26,9 +28,11 @@ export function ToolboxTab(props: Props) {
     proxyMode,
     networkRecordingEnabled,
     networkEntryCount,
+    networkEntries,
     automationTasks,
     onSetProxy,
     onSetNetworkRecording,
+    onClearNetworkRecording,
     onExportNetworkCurl,
     curlOutput,
     onUpsertTask,
@@ -57,8 +61,10 @@ export function ToolboxTab(props: Props) {
               proxyMode={proxyMode}
               networkRecordingEnabled={networkRecordingEnabled}
               networkEntryCount={networkEntryCount}
+              networkEntries={networkEntries}
               onSetProxy={onSetProxy}
               onSetNetworkRecording={onSetNetworkRecording}
+              onClearNetworkRecording={onClearNetworkRecording}
               onExportNetworkCurl={onExportNetworkCurl}
               curlOutput={curlOutput}
             />

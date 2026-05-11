@@ -1,14 +1,18 @@
 import React from 'react';
 import { Button, Divider, Input, Select, Space, Typography } from 'antd';
 import QRCode from 'qrcode';
+import type { NetworkEntry } from '../../types';
+import { NetworkLogSection } from './NetworkLogSection';
 
 type Props = {
   proxyMode: 'system' | 'direct';
   networkRecordingEnabled: boolean;
   networkEntryCount: number;
+  networkEntries: NetworkEntry[];
   curlOutput: string;
   onSetProxy: (mode: 'system' | 'direct') => void;
   onSetNetworkRecording: (enabled: boolean) => void;
+  onClearNetworkRecording: () => void;
   onExportNetworkCurl: () => void;
 };
 
@@ -17,9 +21,11 @@ export function UtilitySection(props: Props) {
     proxyMode,
     networkRecordingEnabled,
     networkEntryCount,
+    networkEntries,
     curlOutput,
     onSetProxy,
     onSetNetworkRecording,
+    onClearNetworkRecording,
     onExportNetworkCurl
   } = props;
 
@@ -66,8 +72,10 @@ export function UtilitySection(props: Props) {
         <Button danger={networkRecordingEnabled} onClick={() => onSetNetworkRecording(false)}>关闭录制</Button>
       </Space>
       <Typography.Text type="secondary">状态：{networkRecordingEnabled ? '录制中' : '已关闭'}，记录条数：{networkEntryCount}</Typography.Text>
-      <Button onClick={onExportNetworkCurl} block>导出为 cURL</Button>
+      <Button onClick={onExportNetworkCurl} block>导出全部为 cURL</Button>
       <Input.TextArea value={curlOutput} readOnly autoSize={{ minRows: 4, maxRows: 10 }} placeholder="导出的 cURL 命令会显示在这里" />
+      <Divider style={{ margin: '8px 0' }} />
+      <NetworkLogSection entries={networkEntries} onClear={onClearNetworkRecording} />
     </Space>
   );
 }

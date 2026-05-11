@@ -1,6 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { Card, Space, Tabs } from 'antd';
+import { Card, Tabs } from 'antd';
 import 'antd/dist/reset.css';
 
 import { useRuntimeStatus } from './hooks/useRuntimeStatus';
@@ -9,8 +9,8 @@ import { SyncTab } from './tabs/SyncTab';
 import { ToolboxTab } from './tabs/ToolboxTab';
 
 function App() {
-  const { state, setSyncResult, setDomainSyncResult, refreshStatus } = useRuntimeStatus();
-  const { runtime, errorItems, bridgeSessions, syncResult, domainSyncResult, automationTasks } = state;
+  const { state, setDomainSyncResult, refreshStatus } = useRuntimeStatus();
+  const { runtime, errorItems, bridgeSessions, domainSyncResult, automationTasks, networkEntries } = state;
 
   const [status, setStatus] = React.useState('idle');
   const [lastErrorFetchAt, setLastErrorFetchAt] = React.useState('-');
@@ -53,6 +53,11 @@ function App() {
 
   const setNetworkRecording = async (enabled: boolean) => {
     await chrome.runtime.sendMessage({ type: 'NETWORK_RECORDING_SET', payload: { enabled } });
+    await refreshStatus();
+  };
+
+  const clearNetworkRecording = async () => {
+    await chrome.runtime.sendMessage({ type: 'NETWORK_RECORDING_CLEAR' });
     await refreshStatus();
   };
 
@@ -120,9 +125,11 @@ function App() {
                   proxyMode={runtime.proxyMode ?? 'system'}
                   networkRecordingEnabled={Boolean(runtime.networkRecordingEnabled)}
                   networkEntryCount={Number(runtime.networkEntryCount ?? 0)}
+                  networkEntries={networkEntries}
                   automationTasks={automationTasks}
                   onSetProxy={(mode) => void setProxy(mode)}
                   onSetNetworkRecording={(enabled) => void setNetworkRecording(enabled)}
+                  onClearNetworkRecording={() => void clearNetworkRecording()}
                   onExportNetworkCurl={() => void exportNetworkCurl()}
                   curlOutput={curlOutput}
                   onUpsertTask={(name, cron, script) => void upsertTask(name, cron, script)}

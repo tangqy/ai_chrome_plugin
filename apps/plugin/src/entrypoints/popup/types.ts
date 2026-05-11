@@ -10,6 +10,7 @@ export type RuntimeStatus = {
   networkRecordingEnabled?: boolean;
   networkRecordingTabId?: number | null;
   networkEntryCount?: number;
+  networkEntries?: NetworkEntry[];
 };
 
 export type ConsoleErrorItem = {
@@ -52,4 +53,14 @@ export type AutomationTask = {
   enabled: boolean;
   lastRunAt?: number;
   lastResult?: string;
+};
+
+export type NetworkEntry = {
+  id: string;
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  postData?: string;
+  resourceType?: string;
+  ts: number;
 };

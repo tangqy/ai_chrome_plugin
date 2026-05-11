@@ -14,6 +14,7 @@ export function initNetworkRecorder() {
         postData?: string;
       };
       requestId?: string;
+      type?: string;
     };
 
     const request = p.request;
@@ -29,6 +30,7 @@ export function initNetworkRecorder() {
       method: String(request.method),
       headers,
       postData: request.postData ? String(request.postData) : undefined,
+      resourceType: p.type ? String(p.type) : undefined,
       ts: Date.now()
     });
 

@@ -4,6 +4,7 @@ import type {
   BridgeSession,
   ConsoleErrorItem,
   DomainSyncResult,
+  NetworkEntry,
   RuntimeStatus,
   SyncResult
 } from '../types';
@@ -15,6 +16,7 @@ type State = {
   syncResult: SyncResult | null;
   domainSyncResult: DomainSyncResult | null;
   automationTasks: AutomationTask[];
+  networkEntries: NetworkEntry[];
 };
 
 const initialRuntime: RuntimeStatus = {
@@ -30,7 +32,8 @@ export function useRuntimeStatus() {
     bridgeSessions: [],
     syncResult: null,
     domainSyncResult: null,
-    automationTasks: []
+    automationTasks: [],
+    networkEntries: []
   });
 
   const applyPayload = React.useCallback((payload: RuntimeStatus & { errorItems?: ConsoleErrorItem[] }) => {
@@ -50,7 +53,8 @@ export function useRuntimeStatus() {
       domainSyncResult: payload.lastDomainSyncResult ?? prev.domainSyncResult,
       automationTasks: Array.isArray(payload.automationTasks)
         ? payload.automationTasks
-        : prev.automationTasks
+        : prev.automationTasks,
+      networkEntries: Array.isArray(payload.networkEntries) ? payload.networkEntries : prev.networkEntries
     }));
   }, []);
 

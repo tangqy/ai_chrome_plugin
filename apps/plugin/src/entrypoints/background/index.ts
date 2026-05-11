@@ -103,6 +103,13 @@ export default defineBackground(() => {
       return true;
     }
 
+    if (message?.type === 'NETWORK_RECORDING_CLEAR') {
+      state.networkEntries = [];
+      broadcastSnapshot();
+      sendResponse({ ok: true, payload: { networkEntryCount: 0 } });
+      return true;
+    }
+
     if (message?.type === 'NETWORK_RECORDING_EXPORT_CURL') {
       void callBridge('network_to_curl', { entries: state.networkEntries })
         .then((res) => sendResponse({ ok: true, payload: res }))

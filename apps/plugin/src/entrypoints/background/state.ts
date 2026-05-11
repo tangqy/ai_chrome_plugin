@@ -52,6 +52,7 @@ export function snapshot() {
     networkRecordingEnabled: state.networkRecordingEnabled,
     networkRecordingTabId: state.networkRecordingTabId,
     networkEntryCount: state.networkEntries.length,
+    networkEntries: state.networkEntries.slice(-200),
     updatedAt: Date.now()
   };
 }

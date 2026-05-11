@@ -46,6 +46,7 @@ export type NetworkEntry = {
   method: string;
   headers: Record<string, string>;
   postData?: string;
+  resourceType?: string;
   ts: number;
 };
 
