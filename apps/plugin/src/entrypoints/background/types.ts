@@ -70,7 +70,20 @@ export type NetworkEntry = {
   headers: Record<string, string>;
   postData?: string;
   resourceType?: string;
+  statusCode?: number;
+  responseHeaders?: Record<string, string>;
+  responseBody?: string;
+  responseMimeType?: string;
   ts: number;
 };
 
 export type ProxyMode = 'system' | 'direct';
+export type BridgeLogTarget = 'terminal' | 'file' | 'both';
+
+export type NetworkRecordingFilter = {
+  pathKeyword: string;
+  pathMatchMode: 'contains' | 'regex';
+  filterMode: 'all' | 'allow' | 'deny';
+  methods: string[];
+  resourceTypes: string[];
+};

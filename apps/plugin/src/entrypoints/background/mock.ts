@@ -1,5 +1,5 @@
 import type { MockRule, NetworkEntry } from './types';
-import { broadcastSnapshot, state } from './state';
+import { broadcastSnapshot, persistState, state } from './state';
 
 export type MockDraft = {
   name: string;
@@ -111,6 +111,7 @@ export function handleMockUpsert(payload: Record<string, unknown>) {
   if (idx >= 0) state.mockRules[idx] = { ...state.mockRules[idx], ...next };
   else state.mockRules.push(next);
   state.mockRules.sort((a, b) => a.priority - b.priority);
+  persistState();
   void pushMockRulesToActiveTab();
   broadcastSnapshot();
   return { rules: state.mockRules };
@@ -118,6 +119,7 @@ export function handleMockUpsert(payload: Record<string, unknown>) {
 
 export function handleMockDelete(id: string) {
   state.mockRules = state.mockRules.filter((r) => r.id !== id);
+  persistState();
   void pushMockRulesToActiveTab();
   broadcastSnapshot();
   return { rules: state.mockRules };
@@ -125,6 +127,7 @@ export function handleMockDelete(id: string) {
 
 export function handleMockToggle(id: string, enabled: boolean) {
   state.mockRules = state.mockRules.map((r) => (r.id === id ? { ...r, enabled } : r));
+  persistState();
   void pushMockRulesToActiveTab();
   broadcastSnapshot();
   return { rules: state.mockRules };

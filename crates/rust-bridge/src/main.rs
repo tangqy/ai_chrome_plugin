@@ -5,6 +5,13 @@ use rust_shared::protocol::{BridgeRequest, BridgeResponse};
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LogTarget {
+    Terminal,
+    File,
+    Both,
+}
+
 mod mcp_tools;
 mod nl_parser;
 mod session;
@@ -22,8 +29,12 @@ async fn main() -> anyhow::Result<()> {
     let ws_errors = errors.clone();
     let ws_sessions = sessions.clone();
     let ws_print_hash = last_print_hash.clone();
+    let log_target = Arc::new(Mutex::new(LogTarget::Both));
+    let ws_log_target = log_target.clone();
     tokio::spawn(async move {
-        if let Err(err) = ws_handlers::run_ws_server(ws_errors, ws_sessions, ws_print_hash).await {
+        if let Err(err) =
+            ws_handlers::run_ws_server(ws_errors, ws_sessions, ws_print_hash, ws_log_target).await
+        {
             eprintln!("ws server error: {err}");
         }
     });

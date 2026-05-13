@@ -46,6 +46,7 @@ export function useRuntimeStatus() {
         currentTabUrl: payload.currentTabUrl,
         recentConsoleErrorCount: payload.recentConsoleErrorCount,
         proxyMode: payload.proxyMode,
+        bridgeLogTarget: payload.bridgeLogTarget,
         networkRecordingEnabled: payload.networkRecordingEnabled,
         networkRecordingTabId: payload.networkRecordingTabId,
         networkEntryCount: payload.networkEntryCount

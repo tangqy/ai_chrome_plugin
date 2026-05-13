@@ -12,6 +12,14 @@ export type RuntimeStatus = {
   networkRecordingTabId?: number | null;
   networkEntryCount?: number;
   networkEntries?: NetworkEntry[];
+  bridgeLogTarget?: 'terminal' | 'file' | 'both';
+  networkRecordingFilter?: {
+    pathKeyword: string;
+    pathMatchMode: 'contains' | 'regex';
+    filterMode: 'all' | 'allow' | 'deny';
+    methods: string[];
+    resourceTypes: string[];
+  };
 };
 
 export type ConsoleErrorItem = {
@@ -86,5 +94,9 @@ export type NetworkEntry = {
   headers: Record<string, string>;
   postData?: string;
   resourceType?: string;
+  statusCode?: number;
+  responseHeaders?: Record<string, string>;
+  responseBody?: string;
+  responseMimeType?: string;
   ts: number;
 };

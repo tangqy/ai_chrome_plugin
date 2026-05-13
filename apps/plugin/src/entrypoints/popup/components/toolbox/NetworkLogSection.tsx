@@ -82,7 +82,22 @@ export function NetworkLogSection({ entries, onClear, onCreateMockFromEntry }: P
                 <Space size={6}><Typography.Text strong>{item.method}</Typography.Text><Tag>{item.resourceType ?? 'UNKNOWN'}</Tag></Space>
                 <Typography.Text ellipsis={{ tooltip: item.url }} style={{ maxWidth: 280 }}>{item.url}</Typography.Text>
                 <Typography.Text type="secondary">{new Date(item.ts).toLocaleTimeString()}</Typography.Text>
-                {expanded ? <pre style={{ margin: 0, padding: 8, background: '#f8fafc', borderRadius: 6, maxWidth: 280, overflow: 'auto', fontSize: 11 }}>{JSON.stringify({ headers: item.headers, body: item.postData ?? '' }, null, 2)}</pre> : null}
+                {expanded ? (
+                  <pre style={{ margin: 0, padding: 8, background: '#f8fafc', borderRadius: 6, maxWidth: 280, overflow: 'auto', fontSize: 11 }}>
+                    {JSON.stringify(
+                      {
+                        statusCode: item.statusCode,
+                        requestHeaders: item.headers,
+                        requestBody: item.postData ?? '',
+                        responseHeaders: item.responseHeaders ?? {},
+                        responseMimeType: item.responseMimeType,
+                        responseBody: item.responseBody ?? ''
+                      },
+                      null,
+                      2
+                    )}
+                  </pre>
+                ) : null}
               </Space>
             </List.Item>
           );

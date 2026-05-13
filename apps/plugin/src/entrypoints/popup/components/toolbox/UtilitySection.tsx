@@ -12,6 +12,8 @@ type Props = {
   curlOutput: string;
   onSetProxy: (mode: 'system' | 'direct') => void;
   onSetNetworkRecording: (enabled: boolean) => void;
+  networkRecordingFilter: { pathKeyword: string; pathMatchMode: 'contains' | 'regex'; filterMode: 'all' | 'allow' | 'deny'; methods: string[]; resourceTypes: string[] };
+  onSetNetworkRecordingFilter: (filter: { pathKeyword: string; pathMatchMode: 'contains' | 'regex'; filterMode: 'all' | 'allow' | 'deny'; methods: string[]; resourceTypes: string[] }) => void;
   onClearNetworkRecording: () => void;
   onExportNetworkCurl: () => void;
   onCreateMockFromEntry: (entry: NetworkEntry) => void;
@@ -23,9 +25,11 @@ export function UtilitySection(props: Props) {
     networkRecordingEnabled,
     networkEntryCount,
     networkEntries,
+    networkRecordingFilter,
     curlOutput,
     onSetProxy,
     onSetNetworkRecording,
+    onSetNetworkRecordingFilter,
     onClearNetworkRecording,
     onExportNetworkCurl,
     onCreateMockFromEntry
@@ -69,6 +73,51 @@ export function UtilitySection(props: Props) {
       <Select value={proxyMode} onChange={onSetProxy} options={[{ label: '系统代理', value: 'system' }, { label: '直连', value: 'direct' }]} />
       <Divider style={{ margin: '8px 0' }} />
       <Typography.Text strong>Network 录制（当前 Tab）</Typography.Text>
+      <Typography.Text type="secondary">录制过滤：路径关键字 / 请求方法 / 资源类型（不命中则不录制）</Typography.Text>
+      <Space>
+        <Select
+          value={networkRecordingFilter.filterMode}
+          style={{ width: 160 }}
+          onChange={(v) => onSetNetworkRecordingFilter({ ...networkRecordingFilter, filterMode: v })}
+          options={[
+            { label: '所有(不过滤)', value: 'all' },
+            { label: '白名单(仅命中)', value: 'allow' },
+            { label: '黑名单(排除命中)', value: 'deny' }
+          ]}
+        />
+        <Select
+          value={networkRecordingFilter.pathMatchMode}
+          style={{ width: 160 }}
+          onChange={(v) => onSetNetworkRecordingFilter({ ...networkRecordingFilter, pathMatchMode: v })}
+          options={[
+            { label: '路径包含', value: 'contains' },
+            { label: '正则匹配', value: 'regex' }
+          ]}
+        />
+      </Space>
+      <Input
+        value={networkRecordingFilter.pathKeyword}
+        onChange={(e) => onSetNetworkRecordingFilter({ ...networkRecordingFilter, pathKeyword: e.target.value })}
+        placeholder="路径关键字或正则（如 /api/user 或 /api/(user|auth)）"
+      />
+      <Select
+        mode="multiple"
+        allowClear
+        placeholder="请求方法过滤（为空=全部）"
+        value={networkRecordingFilter.methods}
+        style={{ width: '100%' }}
+        onChange={(v) => onSetNetworkRecordingFilter({ ...networkRecordingFilter, methods: v })}
+        options={['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].map((v) => ({ label: v, value: v }))}
+      />
+      <Select
+        mode="multiple"
+        allowClear
+        placeholder="资源类型过滤（为空=全部）"
+        value={networkRecordingFilter.resourceTypes}
+        style={{ width: '100%' }}
+        onChange={(v) => onSetNetworkRecordingFilter({ ...networkRecordingFilter, resourceTypes: v })}
+        options={['XHR', 'FETCH', 'DOCUMENT', 'SCRIPT', 'STYLESHEET', 'IMAGE', 'MEDIA', 'FONT', 'OTHER'].map((v) => ({ label: v, value: v }))}
+      />
       <Space>
         <Button type={networkRecordingEnabled ? 'default' : 'primary'} onClick={() => onSetNetworkRecording(true)}>开启录制</Button>
         <Button danger={networkRecordingEnabled} onClick={() => onSetNetworkRecording(false)}>关闭录制</Button>

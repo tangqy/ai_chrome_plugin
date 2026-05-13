@@ -49,6 +49,10 @@ export function sendToBridge(payload: unknown) {
   } catch {}
 }
 
+export function setBridgeLogTarget(target: 'terminal' | 'file' | 'both') {
+  sendToBridge({ type: 'set_log_target', payload: { target }, ts: Date.now() });
+}
+
 export function callBridge(type: string, payload: Record<string, unknown>) {
   return new Promise<unknown>((resolve) => {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -95,6 +99,13 @@ function connectBridge() {
     state.wsConnected = true;
     try {
       socket?.send(JSON.stringify({ type: 'hello', source: 'plugin-background', ts: Date.now() }));
+      socket?.send(
+        JSON.stringify({
+          type: 'set_log_target',
+          payload: { target: state.bridgeLogTarget },
+          ts: Date.now()
+        })
+      );
     } catch {}
     broadcastSnapshot();
   };
@@ -110,7 +121,12 @@ function connectBridge() {
         state.bridgeSessions = Array.isArray(msg.sessions) ? msg.sessions : [];
         broadcastSnapshot();
       }
-      if ((msg?.type === 'format_json_result' || msg?.type === 'diff_text_result' || msg?.type === 'network_to_curl_result') && msg?.requestId) {
+      if (
+        (msg?.type === 'format_json_result' ||
+          msg?.type === 'diff_text_result' ||
+          msg?.type === 'network_to_curl_result') &&
+        msg?.requestId
+      ) {
         const record = pendingBridgeCalls.get(String(msg.requestId));
         if (record) {
           clearTimeout(record.timer);

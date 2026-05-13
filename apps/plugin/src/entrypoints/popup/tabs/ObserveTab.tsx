@@ -13,6 +13,7 @@ type Props = {
   onSelectTab: (v: string) => void;
   onPing: () => void;
   onFetchErrors: () => void;
+  onSetBridgeLogTarget: (target: 'terminal' | 'file' | 'both') => void;
 };
 
 function getBridgeStartCmd() {
@@ -31,7 +32,8 @@ export function ObserveTab(props: Props) {
     selectedTabKey,
     onSelectTab,
     onPing,
-    onFetchErrors
+    onFetchErrors,
+    onSetBridgeLogTarget
   } = props;
 
   const bridgeStartCmd = React.useMemo(() => getBridgeStartCmd(), []);
@@ -68,7 +70,24 @@ export function ObserveTab(props: Props) {
           <Tag color={runtime.recentConsoleErrorCount > 0 ? 'error' : 'success'}>{runtime.recentConsoleErrorCount}</Tag>
         </Descriptions.Item>
         <Descriptions.Item label="Fetch Errors At">{lastErrorFetchAt}</Descriptions.Item>
+        <Descriptions.Item label="Log Target">{runtime.bridgeLogTarget ?? 'both'}</Descriptions.Item>
       </Descriptions>
+
+      <Card size="small" title="日志输出设置">
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Typography.Text type="secondary">选择 bridge 日志输出位置：终端、文件，或两者。</Typography.Text>
+          <Select
+            size="small"
+            value={runtime.bridgeLogTarget ?? 'both'}
+            options={[
+              { label: '两者都要（终端 + 文件）', value: 'both' },
+              { label: '仅终端', value: 'terminal' },
+              { label: '仅文件', value: 'file' }
+            ]}
+            onChange={(v) => onSetBridgeLogTarget(v as 'terminal' | 'file' | 'both')}
+          />
+        </Space>
+      </Card>
 
       {!runtime.wsConnected ? (
         <Card size="small" title="Bridge 未启动" style={{ borderColor: '#f59e0b' }}>

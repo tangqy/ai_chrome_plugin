@@ -7,11 +7,13 @@ type Props = {
   sourceDomain: string;
   onChangeSourceDomain: (v: string) => void;
   domainSyncResult: DomainSyncResult | null;
+  syncing: boolean;
+  syncError: string;
   onRunDomainSync: () => void;
 };
 
 export function SyncTab(props: Props) {
-  const { runtime, sourceDomain, onChangeSourceDomain, domainSyncResult, onRunDomainSync } = props;
+  const { runtime, sourceDomain, onChangeSourceDomain, domainSyncResult, syncing, syncError, onRunDomainSync } = props;
 
   return (
     <Space direction="vertical" size={10} style={{ width: '100%' }}>
@@ -22,7 +24,8 @@ export function SyncTab(props: Props) {
         onChange={(e) => onChangeSourceDomain(e.target.value)}
         placeholder="输入源 tab 域名（例如 react_web 或 test.example.com）"
       />
-      <Button type="primary" onClick={onRunDomainSync} block>同步源域名数据到当前页面</Button>
+      <Button type="primary" loading={syncing} onClick={onRunDomainSync} block>同步源域名数据到当前页面</Button>
+      {syncError ? <Typography.Text type="danger">{syncError}</Typography.Text> : null}
       {domainSyncResult ? (
         <Card size="small" title="最近一次同步结果">
           <Descriptions column={1} size="small" bordered>

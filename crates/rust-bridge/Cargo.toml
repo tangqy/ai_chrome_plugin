@@ -7,8 +7,10 @@ edition = "2021"
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["io-std"] }
+tokio = { workspace = true, features = ["io-std", "fs"] }
 rust-shared = { path = "../rust-shared" }
 futures-util = "0.3"
 tokio-tungstenite = "0.24"
 similar = "2.7"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+url = "2.5"

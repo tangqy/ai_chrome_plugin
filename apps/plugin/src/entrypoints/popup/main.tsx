@@ -19,13 +19,17 @@ type MockDraft = {
 };
 
 function App() {
+  const POPUP_PREF_KEY = 'wujie_popup_prefs_v1';
   const { state, setDomainSyncResult, refreshStatus } = useRuntimeStatus();
   const { runtime, errorItems, bridgeSessions, domainSyncResult, automationTasks, mockRules, networkEntries } = state;
 
   const [status, setStatus] = React.useState('idle');
   const [lastErrorFetchAt, setLastErrorFetchAt] = React.useState('-');
+  const [activeMainTab, setActiveMainTab] = React.useState('observe');
   const [selectedTabKey, setSelectedTabKey] = React.useState('all');
   const [sourceDomain, setSourceDomain] = React.useState('react_web');
+  const [syncingDomain, setSyncingDomain] = React.useState(false);
+  const [domainSyncError, setDomainSyncError] = React.useState('');
   const [curlOutput, setCurlOutput] = React.useState('');
   const [mockSeedDraft, setMockSeedDraft] = React.useState<MockDraft | null>(null);
 
@@ -50,8 +54,25 @@ function App() {
   };
 
   const runDomainSync = async () => {
-    const res = await chrome.runtime.sendMessage({ type: 'SYNC_FROM_SOURCE_DOMAIN', payload: { sourceDomain } });
-    if (res?.ok && res.payload) setDomainSyncResult(res.payload);
+    setSyncingDomain(true);
+    setDomainSyncError('');
+    try {
+      const res = await chrome.runtime.sendMessage({ type: 'SYNC_FROM_SOURCE_DOMAIN', payload: { sourceDomain } });
+      if (res?.ok && res.payload) {
+        setDomainSyncResult(res.payload);
+        return;
+      }
+      setDomainSyncError(String(res?.error ?? '同步失败'));
+    } catch (err) {
+      setDomainSyncError(err instanceof Error ? err.message : '同步失败');
+    } finally {
+      setSyncingDomain(false);
+    }
+  };
+
+  const setBridgeLogTarget = async (target: 'terminal' | 'file' | 'both') => {
+    const res = await chrome.runtime.sendMessage({ type: 'BRIDGE_LOG_TARGET_SET', payload: { target } });
+    if (res?.ok) await refreshStatus();
   };
 
   const setProxy = async (mode: 'system' | 'direct') => {
@@ -61,6 +82,11 @@ function App() {
 
   const setNetworkRecording = async (enabled: boolean) => {
     await chrome.runtime.sendMessage({ type: 'NETWORK_RECORDING_SET', payload: { enabled } });
+    await refreshStatus();
+  };
+
+  const setNetworkRecordingFilter = async (filter: { pathKeyword: string; pathMatchMode: 'contains' | 'regex'; filterMode: 'all' | 'allow' | 'deny'; methods: string[]; resourceTypes: string[] }) => {
+    await chrome.runtime.sendMessage({ type: 'NETWORK_RECORDING_FILTER_SET', payload: filter });
     await refreshStatus();
   };
 
@@ -120,26 +146,53 @@ function App() {
     return String(p?.error ?? 'preview failed');
   };
 
+  React.useEffect(() => {
+    void (async () => {
+      try {
+        const stored = await chrome.storage.local.get(POPUP_PREF_KEY);
+        const prefs = stored?.[POPUP_PREF_KEY] as { activeMainTab?: string; selectedTabKey?: string; sourceDomain?: string } | undefined;
+        if (prefs?.activeMainTab) setActiveMainTab(prefs.activeMainTab);
+        if (prefs?.selectedTabKey) setSelectedTabKey(prefs.selectedTabKey);
+        if (prefs?.sourceDomain) setSourceDomain(prefs.sourceDomain);
+      } catch {}
+    })();
+  }, []);
+
+  React.useEffect(() => {
+    void chrome.storage.local
+      .set({
+        [POPUP_PREF_KEY]: { activeMainTab, selectedTabKey, sourceDomain }
+      })
+      .catch(() => {});
+  }, [activeMainTab, selectedTabKey, sourceDomain]);
+
+  React.useEffect(() => {
+    if (activeMainTab !== 'observe') return;
+    void chrome.runtime.sendMessage({ type: 'BRIDGE_CONNECT' }).catch(() => {});
+  }, [activeMainTab]);
+
   return (
     <main style={{ padding: 12, width: 460, background: '#f5f7fa' }}>
       <Card size="small" title="Wujie AI Sensing">
         <Tabs
           size="small"
+          activeKey={activeMainTab}
+          onChange={(k) => setActiveMainTab(k)}
           items={[
             {
               key: 'observe',
               label: '观测面板',
-              children: <ObserveTab status={status} runtime={runtime} lastErrorFetchAt={lastErrorFetchAt} errorItems={errorItems} bridgeSessions={bridgeSessions} selectedTabKey={selectedTabKey} onSelectTab={setSelectedTabKey} onPing={() => void ping()} onFetchErrors={() => void fetchErrors()} />
+              children: <ObserveTab status={status} runtime={runtime} lastErrorFetchAt={lastErrorFetchAt} errorItems={errorItems} bridgeSessions={bridgeSessions} selectedTabKey={selectedTabKey} onSelectTab={setSelectedTabKey} onPing={() => void ping()} onFetchErrors={() => void fetchErrors()} onSetBridgeLogTarget={(target) => void setBridgeLogTarget(target)} />
             },
             {
               key: 'sync-domain',
               label: '同步数据',
-              children: <SyncTab runtime={runtime} sourceDomain={sourceDomain} onChangeSourceDomain={setSourceDomain} domainSyncResult={domainSyncResult} onRunDomainSync={() => void runDomainSync()} />
+              children: <SyncTab runtime={runtime} sourceDomain={sourceDomain} onChangeSourceDomain={setSourceDomain} domainSyncResult={domainSyncResult} syncing={syncingDomain} syncError={domainSyncError} onRunDomainSync={() => void runDomainSync()} />
             },
             {
               key: 'tools',
               label: '工具箱',
-              children: <ToolboxTab runtimeConnected={runtime.wsConnected} proxyMode={runtime.proxyMode ?? 'system'} networkRecordingEnabled={Boolean(runtime.networkRecordingEnabled)} networkEntryCount={Number(runtime.networkEntryCount ?? 0)} networkEntries={networkEntries} automationTasks={automationTasks} onSetProxy={(mode) => void setProxy(mode)} onSetNetworkRecording={(enabled) => void setNetworkRecording(enabled)} onClearNetworkRecording={() => void clearNetworkRecording()} onExportNetworkCurl={() => void exportNetworkCurl()} onCreateMockFromEntry={(entry) => void createMockFromEntry(entry)} curlOutput={curlOutput} onUpsertTask={(name, cron, script) => void upsertTask(name, cron, script)} onDeleteTask={(id) => void deleteTask(id)} />
+              children: <ToolboxTab runtimeConnected={runtime.wsConnected} proxyMode={runtime.proxyMode ?? 'system'} networkRecordingEnabled={Boolean(runtime.networkRecordingEnabled)} networkEntryCount={Number(runtime.networkEntryCount ?? 0)} networkEntries={networkEntries} networkRecordingFilter={runtime.networkRecordingFilter ?? { pathKeyword: '', pathMatchMode: 'contains', filterMode: 'all', methods: [], resourceTypes: ['XHR'] }} automationTasks={automationTasks} onSetProxy={(mode) => void setProxy(mode)} onSetNetworkRecording={(enabled) => void setNetworkRecording(enabled)} onSetNetworkRecordingFilter={(filter) => void setNetworkRecordingFilter(filter)} onClearNetworkRecording={() => void clearNetworkRecording()} onExportNetworkCurl={() => void exportNetworkCurl()} onCreateMockFromEntry={(entry) => void createMockFromEntry(entry)} curlOutput={curlOutput} onUpsertTask={(name, cron, script) => void upsertTask(name, cron, script)} onDeleteTask={(id) => void deleteTask(id)} />
             },
             {
               key: 'mock',

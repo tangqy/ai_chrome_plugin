@@ -1,4 +1,4 @@
-import { initBridge, callBridge, ensureBridgeConnected, sendToBridge } from './bridge';
+import { initBridge, callBridge, ensureBridgeConnected, sendToBridge, setBridgeLogTarget } from './bridge';
 import { initAutomationTicker } from './cron';
 import {
   handleCurlImport,
@@ -11,14 +11,18 @@ import {
 } from './mock';
 import { initNetworkRecorder } from './network';
 import { runDomainSync, runSyncData } from './operations';
-import { broadcastSnapshot, snapshot, state } from './state';
+import { broadcastSnapshot, hydrateState, persistState, snapshot, state } from './state';
 
 export default defineBackground(() => {
   console.log('[wujie-ai] background started');
 
-  initBridge();
-  initAutomationTicker();
-  initNetworkRecorder();
+  void (async () => {
+    await hydrateState();
+    initBridge();
+    initAutomationTicker();
+    initNetworkRecorder();
+    broadcastSnapshot();
+  })();
 
   setInterval(() => {
     sendToBridge({ type: 'get_console_errors', ts: Date.now() });
@@ -51,6 +55,21 @@ export default defineBackground(() => {
     if (message?.type === 'BRIDGE_CONNECT') {
       ensureBridgeConnected();
       sendResponse({ ok: true });
+      return true;
+    }
+
+    if (message?.type === 'BRIDGE_LOG_TARGET_SET') {
+      const target = message?.payload?.target;
+      if (target !== 'terminal' && target !== 'file' && target !== 'both') {
+        sendResponse({ ok: false, error: 'invalid log target' });
+        return true;
+      }
+      state.bridgeLogTarget = target;
+      ensureBridgeConnected();
+      setBridgeLogTarget(target);
+      persistState();
+      broadcastSnapshot();
+      sendResponse({ ok: true, payload: { bridgeLogTarget: state.bridgeLogTarget } });
       return true;
     }
 
@@ -98,6 +117,7 @@ export default defineBackground(() => {
           return;
         }
         state.proxyMode = mode;
+        persistState();
         broadcastSnapshot();
         sendResponse({ ok: true, payload: { proxyMode: state.proxyMode } });
       });
@@ -145,6 +165,23 @@ export default defineBackground(() => {
       return true;
     }
 
+    if (message?.type === 'NETWORK_RECORDING_FILTER_SET') {
+      const payload = message?.payload ?? {};
+      const methods = Array.isArray(payload.methods) ? payload.methods.map((x: unknown) => String(x).toUpperCase()) : [];
+      const resourceTypes = Array.isArray(payload.resourceTypes) ? payload.resourceTypes.map((x: unknown) => String(x).toUpperCase()) : [];
+      state.networkRecordingFilter = {
+        pathKeyword: String(payload.pathKeyword ?? ''),
+        pathMatchMode: payload.pathMatchMode === 'regex' ? 'regex' : 'contains',
+        filterMode: payload.filterMode === 'deny' ? 'deny' : payload.filterMode === 'allow' ? 'allow' : 'all',
+        methods: methods.filter(Boolean),
+        resourceTypes: resourceTypes.filter(Boolean)
+      };
+      persistState();
+      broadcastSnapshot();
+      sendResponse({ ok: true, payload: { networkRecordingFilter: state.networkRecordingFilter } });
+      return true;
+    }
+
     if (message?.type === 'NETWORK_RECORDING_EXPORT_CURL') {
       ensureBridgeConnected();
       void callBridge('network_to_curl', { entries: state.networkEntries })
@@ -166,6 +203,7 @@ export default defineBackground(() => {
       };
       if (idx >= 0) state.automationTasks[idx] = { ...state.automationTasks[idx], ...next };
       else state.automationTasks.push(next);
+      persistState();
       broadcastSnapshot();
       sendResponse({ ok: true, payload: { tasks: state.automationTasks } });
       return true;
@@ -173,6 +211,7 @@ export default defineBackground(() => {
 
     if (message?.type === 'AUTOMATION_DELETE') {
       state.automationTasks = state.automationTasks.filter((t) => t.id !== String(message?.payload?.id ?? ''));
+      persistState();
       broadcastSnapshot();
       sendResponse({ ok: true, payload: { tasks: state.automationTasks } });
       return true;

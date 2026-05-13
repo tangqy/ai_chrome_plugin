@@ -12,9 +12,11 @@ type Props = {
   networkRecordingEnabled: boolean;
   networkEntryCount: number;
   networkEntries: NetworkEntry[];
+  networkRecordingFilter: { pathKeyword: string; pathMatchMode: 'contains' | 'regex'; filterMode: 'all' | 'allow' | 'deny'; methods: string[]; resourceTypes: string[] };
   automationTasks: AutomationTask[];
   onSetProxy: (mode: 'system' | 'direct') => void;
   onSetNetworkRecording: (enabled: boolean) => void;
+  onSetNetworkRecordingFilter: (filter: { pathKeyword: string; pathMatchMode: 'contains' | 'regex'; filterMode: 'all' | 'allow' | 'deny'; methods: string[]; resourceTypes: string[] }) => void;
   onClearNetworkRecording: () => void;
   onExportNetworkCurl: () => void;
   onCreateMockFromEntry: (entry: NetworkEntry) => void;
@@ -30,9 +32,11 @@ export function ToolboxTab(props: Props) {
     networkRecordingEnabled,
     networkEntryCount,
     networkEntries,
+    networkRecordingFilter,
     automationTasks,
     onSetProxy,
     onSetNetworkRecording,
+    onSetNetworkRecordingFilter,
     onClearNetworkRecording,
     onExportNetworkCurl,
     onCreateMockFromEntry,
@@ -64,8 +68,10 @@ export function ToolboxTab(props: Props) {
               networkRecordingEnabled={networkRecordingEnabled}
               networkEntryCount={networkEntryCount}
               networkEntries={networkEntries}
+              networkRecordingFilter={networkRecordingFilter}
               onSetProxy={onSetProxy}
               onSetNetworkRecording={onSetNetworkRecording}
+              onSetNetworkRecordingFilter={onSetNetworkRecordingFilter}
               onClearNetworkRecording={onClearNetworkRecording}
               onExportNetworkCurl={onExportNetworkCurl}
               onCreateMockFromEntry={onCreateMockFromEntry}
