@@ -1,6 +1,8 @@
 node_modules
 .pnpm-store
 .output
+out
 target
 dist
 .wxt
+.DS_Store

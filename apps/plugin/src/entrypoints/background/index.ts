@@ -1,4 +1,4 @@
-import { initBridge, callBridge, sendToBridge } from './bridge';
+import { initBridge, callBridge, ensureBridgeConnected, sendToBridge } from './bridge';
 import { initAutomationTicker } from './cron';
 import {
   handleCurlImport,
@@ -44,6 +44,12 @@ export default defineBackground(() => {
     if (message?.type === 'CONSOLE_ERROR') {
       state.recentConsoleErrorCount += 1;
       sendToBridge({ type: 'console_error', ts: Date.now(), payload: { ...message.payload, tabId: sender?.tab?.id ?? null, url: sender?.tab?.url ?? state.currentTabUrl } });
+      sendResponse({ ok: true });
+      return true;
+    }
+
+    if (message?.type === 'BRIDGE_CONNECT') {
+      ensureBridgeConnected();
       sendResponse({ ok: true });
       return true;
     }
@@ -140,6 +146,7 @@ export default defineBackground(() => {
     }
 
     if (message?.type === 'NETWORK_RECORDING_EXPORT_CURL') {
+      ensureBridgeConnected();
       void callBridge('network_to_curl', { entries: state.networkEntries })
         .then((res) => sendResponse({ ok: true, payload: res }))
         .catch((err) => sendResponse({ ok: false, error: err instanceof Error ? err.message : 'network export failed' }));
@@ -172,6 +179,7 @@ export default defineBackground(() => {
     }
 
     if (message?.type === 'FORMAT_JSON_FAST') {
+      ensureBridgeConnected();
       void callBridge('format_json', { input: String(message?.payload?.input ?? '') })
         .then((res) => sendResponse({ ok: true, payload: res }))
         .catch((err) => sendResponse({ ok: false, error: err instanceof Error ? err.message : 'format_json failed' }));
@@ -179,6 +187,7 @@ export default defineBackground(() => {
     }
 
     if (message?.type === 'DIFF_TEXT_FAST') {
+      ensureBridgeConnected();
       void callBridge('diff_text', { left: String(message?.payload?.left ?? ''), right: String(message?.payload?.right ?? '') })
         .then((res) => sendResponse({ ok: true, payload: res }))
         .catch((err) => sendResponse({ ok: false, error: err instanceof Error ? err.message : 'diff_text failed' }));
@@ -212,6 +221,7 @@ export default defineBackground(() => {
     }
 
     if (message?.type === 'GET_CONSOLE_ERRORS') {
+      ensureBridgeConnected();
       sendToBridge({ type: 'get_console_errors', ts: Date.now() });
       sendResponse({ ok: true });
       return true;

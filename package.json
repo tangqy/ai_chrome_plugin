@@ -8,6 +8,7 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
-    "bridge:run": "cargo run -p rust-bridge"
+    "bridge:run": "cargo run -p rust-bridge",
+    "package:all": "node scripts/package-all.mjs"
   }
 }

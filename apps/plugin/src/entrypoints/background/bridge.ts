@@ -2,49 +2,100 @@ import { broadcastSnapshot, state } from './state';
 
 type PendingCall = {
   resolve: (value: unknown) => void;
-  reject: (reason?: unknown) => void;
   timer: ReturnType<typeof setTimeout>;
 };
 
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let bridgeDisabled = false;
+let lazyMode = true;
 const pendingBridgeCalls = new Map<string, PendingCall>();
+
+function settlePendingAsUnavailable() {
+  for (const [, pending] of pendingBridgeCalls) {
+    clearTimeout(pending.timer);
+    pending.resolve({ ok: false, error: 'bridge unavailable' });
+  }
+  pendingBridgeCalls.clear();
+}
+
+function clearReconnect() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+}
+
+function scheduleReconnect() {
+  if (lazyMode) return;
+  clearReconnect();
+  reconnectTimer = setTimeout(connectBridge, 3000);
+}
+
+export function isBridgeConnected() {
+  return !!socket && socket.readyState === WebSocket.OPEN;
+}
+
+export function ensureBridgeConnected() {
+  if (bridgeDisabled) return;
+  lazyMode = false;
+  connectBridge();
+}
 
 export function sendToBridge(payload: unknown) {
   if (!socket || socket.readyState !== WebSocket.OPEN) return;
-  socket.send(JSON.stringify(payload));
+  try {
+    socket.send(JSON.stringify(payload));
+  } catch {}
 }
 
 export function callBridge(type: string, payload: Record<string, unknown>) {
-  return new Promise<unknown>((resolve, reject) => {
+  return new Promise<unknown>((resolve) => {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
-      reject(new Error('bridge socket is not connected'));
+      resolve({ ok: false, error: `bridge socket is not connected: ${type}` });
       return;
     }
     const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const timer = setTimeout(() => {
       pendingBridgeCalls.delete(requestId);
-      reject(new Error(`bridge call timeout: ${type}`));
+      resolve({ ok: false, error: `bridge call timeout: ${type}` });
     }, 5000);
-    pendingBridgeCalls.set(requestId, { resolve, reject, timer });
-    socket.send(JSON.stringify({ type, requestId, payload }));
+    pendingBridgeCalls.set(requestId, { resolve, timer });
+    try {
+      socket.send(JSON.stringify({ type, requestId, payload }));
+    } catch {
+      clearTimeout(timer);
+      pendingBridgeCalls.delete(requestId);
+      resolve({ ok: false, error: `bridge send failed: ${type}` });
+    }
   });
 }
 
 export function initBridge() {
-  connectBridge();
+  // lazy by default: do not connect on extension startup.
+  state.wsConnected = false;
+  broadcastSnapshot();
 }
 
 function connectBridge() {
-  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+  if (bridgeDisabled) return;
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+
+  try {
+    socket = new WebSocket('ws://127.0.0.1:8787/ws');
+  } catch {
+    state.wsConnected = false;
+    broadcastSnapshot();
+    settlePendingAsUnavailable();
+    scheduleReconnect();
     return;
   }
 
-  socket = new WebSocket('ws://127.0.0.1:8787/ws');
-
   socket.onopen = () => {
     state.wsConnected = true;
-    socket?.send(JSON.stringify({ type: 'hello', source: 'plugin-background', ts: Date.now() }));
+    try {
+      socket?.send(JSON.stringify({ type: 'hello', source: 'plugin-background', ts: Date.now() }));
+    } catch {}
     broadcastSnapshot();
   };
 
@@ -73,8 +124,8 @@ function connectBridge() {
   socket.onclose = () => {
     state.wsConnected = false;
     broadcastSnapshot();
-    if (reconnectTimer) clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(connectBridge, 2000);
+    settlePendingAsUnavailable();
+    scheduleReconnect();
   };
 
   socket.onerror = () => {

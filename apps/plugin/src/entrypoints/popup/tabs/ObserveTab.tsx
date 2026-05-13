@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Card, Descriptions, List, Select, Space, Tag, Typography } from 'antd';
+import { Button, Card, Descriptions, Input, List, Select, Space, Tag, Typography } from 'antd';
 import { ApiOutlined } from '@ant-design/icons';
 import type { BridgeSession, ConsoleErrorItem, RuntimeStatus } from '../types';
 
@@ -15,6 +15,12 @@ type Props = {
   onFetchErrors: () => void;
 };
 
+function getBridgeStartCmd() {
+  const ua = navigator.userAgent.toLowerCase();
+  if (ua.includes('windows')) return 'wujie-mcp-bridge.exe';
+  return './wujie-mcp-bridge';
+}
+
 export function ObserveTab(props: Props) {
   const {
     status,
@@ -28,6 +34,8 @@ export function ObserveTab(props: Props) {
     onFetchErrors
   } = props;
 
+  const bridgeStartCmd = React.useMemo(() => getBridgeStartCmd(), []);
+
   const tabOptions = React.useMemo(() => {
     const ids = new Set<string>();
     for (const item of errorItems) ids.add(String(item.tab_id ?? 'unknown'));
@@ -38,6 +46,10 @@ export function ObserveTab(props: Props) {
     if (selectedTabKey === 'all') return errorItems;
     return errorItems.filter((item) => String(item.tab_id ?? 'unknown') === selectedTabKey);
   }, [errorItems, selectedTabKey]);
+
+  const copyBridgeCmd = async () => {
+    await navigator.clipboard.writeText(bridgeStartCmd);
+  };
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
@@ -57,6 +69,18 @@ export function ObserveTab(props: Props) {
         </Descriptions.Item>
         <Descriptions.Item label="Fetch Errors At">{lastErrorFetchAt}</Descriptions.Item>
       </Descriptions>
+
+      {!runtime.wsConnected ? (
+        <Card size="small" title="Bridge 未启动" style={{ borderColor: '#f59e0b' }}>
+          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            <Typography.Text type="secondary">请先运行已分发的 bridge 可执行文件（无需 Rust 环境）。</Typography.Text>
+            <Input value={bridgeStartCmd} readOnly />
+            <Typography.Text type="secondary">开发模式命令：`cargo run -p rust-bridge`</Typography.Text>
+            <Button onClick={() => void copyBridgeCmd()} block>复制启动命令</Button>
+          </Space>
+        </Card>
+      ) : null}
+
       <Button type="primary" icon={<ApiOutlined />} onClick={onPing} block>Ping Background</Button>
       <Button onClick={onFetchErrors} block>Fetch Console Errors</Button>
       <Card size="small" title={`Latest Errors (${filteredErrors.length})`}>

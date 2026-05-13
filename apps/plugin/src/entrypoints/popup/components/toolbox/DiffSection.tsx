@@ -15,6 +15,23 @@ async function readFileText(file: File): Promise<string> {
   });
 }
 
+function diffLocal(left: string, right: string): string {
+  const a = left.split('\n');
+  const b = right.split('\n');
+  const n = Math.max(a.length, b.length);
+  const out: string[] = [];
+  for (let i = 0; i < n; i += 1) {
+    const la = a[i] ?? '';
+    const lb = b[i] ?? '';
+    if (la === lb) out.push(`  ${la}`);
+    else {
+      if (la) out.push(`- ${la}`);
+      if (lb) out.push(`+ ${lb}`);
+    }
+  }
+  return out.join('\n');
+}
+
 export function DiffSection({ runtimeConnected }: Props) {
   const [leftName, setLeftName] = React.useState('');
   const [rightName, setRightName] = React.useState('');
@@ -47,20 +64,8 @@ export function DiffSection({ runtimeConnected }: Props) {
   };
 
   const diffFast = async () => {
-    const a = diffLeft.split('\n');
-    const b = diffRight.split('\n');
-    const n = Math.max(a.length, b.length);
-    const out: string[] = [];
-    for (let i = 0; i < n; i += 1) {
-      const la = a[i] ?? '';
-      const lb = b[i] ?? '';
-      if (la === lb) out.push(`  ${la}`);
-      else {
-        if (la) out.push(`- ${la}`);
-        if (lb) out.push(`+ ${lb}`);
-      }
-    }
-    setDiffOutput(out.join('\n'));
+    setDiffOutput(diffLocal(diffLeft, diffRight));
+
     if (!runtimeConnected) return;
     try {
       const res = await chrome.runtime.sendMessage({ type: 'DIFF_TEXT_FAST', payload: { left: diffLeft, right: diffRight } });
