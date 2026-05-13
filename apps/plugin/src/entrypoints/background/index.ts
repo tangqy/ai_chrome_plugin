@@ -174,7 +174,8 @@ export default defineBackground(() => {
         pathMatchMode: payload.pathMatchMode === 'regex' ? 'regex' : 'contains',
         filterMode: payload.filterMode === 'deny' ? 'deny' : payload.filterMode === 'allow' ? 'allow' : 'all',
         methods: methods.filter(Boolean),
-        resourceTypes: resourceTypes.filter(Boolean)
+        resourceTypes: resourceTypes.filter(Boolean),
+        bodyPreviewLimit: payload.bodyPreviewLimit === '1mb' || payload.bodyPreviewLimit === '5mb' ? payload.bodyPreviewLimit : '256kb'
       };
       persistState();
       broadcastSnapshot();

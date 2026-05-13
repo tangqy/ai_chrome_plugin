@@ -1,6 +1,8 @@
 import { broadcastSnapshot, state } from './state';
 import { sendToBridge } from './bridge';
 
+const LOG_CHUNK_CHARS = 64 * 1024;
+
 type PendingRequest = {
   id: string;
   url: string;
@@ -12,6 +14,11 @@ type PendingRequest = {
   responseHeaders?: Record<string, string>;
   responseBody?: string;
   responseMimeType?: string;
+  requestBodySize?: number;
+  responseBodySize?: number;
+  requestBodyTruncated?: boolean;
+  responseBodyTruncated?: boolean;
+  captureError?: string;
   ts: number;
 };
 
@@ -22,6 +29,13 @@ function toStringMap(v: unknown): Record<string, string> {
   if (!v || typeof v !== 'object') return out;
   for (const [k, val] of Object.entries(v as Record<string, unknown>)) out[k] = String(val);
   return out;
+}
+
+function getBodyPreviewLimitBytes() {
+  const limit = state.networkRecordingFilter.bodyPreviewLimit;
+  if (limit === '1mb') return 1024 * 1024;
+  if (limit === '5mb') return 5 * 1024 * 1024;
+  return 256 * 1024;
 }
 
 function shouldRecord(entry: { method: string; url: string; resourceType?: string }) {
@@ -62,10 +76,57 @@ function pushCompleted(entry: PendingRequest, tabId: number) {
       method: entry.method,
       url: entry.url,
       resourceType: entry.resourceType,
-      statusCode: entry.statusCode
+      statusCode: entry.statusCode,
+      requestBodySize: entry.requestBodySize,
+      responseBodySize: entry.responseBodySize,
+      requestBodyTruncated: entry.requestBodyTruncated,
+      responseBodyTruncated: entry.responseBodyTruncated,
+      captureError: entry.captureError
     }
   });
   broadcastSnapshot();
+}
+
+async function sha256Hex(input: string) {
+  const buf = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function sendBodyChunks(payload: {
+  tabId: number;
+  requestId: string;
+  url: string;
+  method: string;
+  part: 'request' | 'response';
+  content: string;
+  ts: number;
+}) {
+  const totalChunks = Math.max(1, Math.ceil(payload.content.length / LOG_CHUNK_CHARS));
+  const contentSha256 = await sha256Hex(payload.content);
+  for (let i = 0; i < totalChunks; i += 1) {
+    const start = i * LOG_CHUNK_CHARS;
+    const end = Math.min(payload.content.length, start + LOG_CHUNK_CHARS);
+    const chunk = payload.content.slice(start, end);
+    sendToBridge({
+      type: 'network_body_chunk',
+      ts: payload.ts,
+      payload: {
+        tabId: payload.tabId,
+        requestId: payload.requestId,
+        url: payload.url,
+        method: payload.method,
+        part: payload.part,
+        chunkIndex: i,
+        totalChunks,
+        contentSha256,
+        chunkSha256: await sha256Hex(chunk),
+        chunk
+      }
+    });
+  }
 }
 
 export function initNetworkRecorder() {
@@ -110,14 +171,59 @@ export function initNetworkRecorder() {
       if (!item || !source.tabId) return;
       const target = { tabId: source.tabId };
       const finalize = async () => {
+        const ts = Date.now();
+        const previewLimitBytes = getBodyPreviewLimitBytes();
         try {
           const postData = await chrome.debugger.sendCommand(target, 'Network.getRequestPostData', { requestId }) as { postData?: string };
-          if (postData?.postData) item.postData = String(postData.postData);
-        } catch {}
+          if (postData?.postData) {
+            const raw = String(postData.postData);
+            const size = new TextEncoder().encode(raw).length;
+            item.requestBodySize = size;
+            if (size > previewLimitBytes) {
+              item.requestBodyTruncated = true;
+              item.postData = `${raw.slice(0, previewLimitBytes)}\n...[truncated]`;
+              await sendBodyChunks({
+                tabId: source.tabId!,
+                requestId,
+                url: item.url,
+                method: item.method,
+                part: 'request',
+                content: raw,
+                ts
+              });
+            } else {
+              item.postData = raw;
+            }
+          }
+        } catch (e) {
+          item.captureError = `requestBody: ${e instanceof Error ? e.message : 'unavailable'}`;
+        }
         try {
           const body = await chrome.debugger.sendCommand(target, 'Network.getResponseBody', { requestId }) as { body?: string; base64Encoded?: boolean };
-          if (body?.body) item.responseBody = body.base64Encoded ? `[base64] ${body.body}` : String(body.body);
-        } catch {}
+          if (body?.body) {
+            const content = body.base64Encoded ? `[base64] ${body.body}` : String(body.body);
+            const size = new TextEncoder().encode(content).length;
+            item.responseBodySize = size;
+            if (size > previewLimitBytes) {
+              item.responseBodyTruncated = true;
+              item.responseBody = `${content.slice(0, previewLimitBytes)}\n...[truncated]`;
+              await sendBodyChunks({
+                tabId: source.tabId!,
+                requestId,
+                url: item.url,
+                method: item.method,
+                part: 'response',
+                content,
+                ts
+              });
+            } else {
+              item.responseBody = content;
+            }
+          }
+        } catch (e) {
+          const msg = `responseBody: ${e instanceof Error ? e.message : 'unavailable'}`;
+          item.captureError = item.captureError ? `${item.captureError}; ${msg}` : msg;
+        }
         pending.delete(requestId);
         pushCompleted(item, source.tabId!);
       };

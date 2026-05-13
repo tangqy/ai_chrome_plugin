@@ -12,11 +12,11 @@ type Props = {
   networkRecordingEnabled: boolean;
   networkEntryCount: number;
   networkEntries: NetworkEntry[];
-  networkRecordingFilter: { pathKeyword: string; pathMatchMode: 'contains' | 'regex'; filterMode: 'all' | 'allow' | 'deny'; methods: string[]; resourceTypes: string[] };
+  networkRecordingFilter: { pathKeyword: string; pathMatchMode: 'contains' | 'regex'; filterMode: 'all' | 'allow' | 'deny'; methods: string[]; resourceTypes: string[]; bodyPreviewLimit: '256kb' | '1mb' | '5mb' };
   automationTasks: AutomationTask[];
   onSetProxy: (mode: 'system' | 'direct') => void;
   onSetNetworkRecording: (enabled: boolean) => void;
-  onSetNetworkRecordingFilter: (filter: { pathKeyword: string; pathMatchMode: 'contains' | 'regex'; filterMode: 'all' | 'allow' | 'deny'; methods: string[]; resourceTypes: string[] }) => void;
+  onSetNetworkRecordingFilter: (filter: { pathKeyword: string; pathMatchMode: 'contains' | 'regex'; filterMode: 'all' | 'allow' | 'deny'; methods: string[]; resourceTypes: string[]; bodyPreviewLimit: '256kb' | '1mb' | '5mb' }) => void;
   onClearNetworkRecording: () => void;
   onExportNetworkCurl: () => void;
   onCreateMockFromEntry: (entry: NetworkEntry) => void;

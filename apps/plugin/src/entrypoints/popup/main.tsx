@@ -85,7 +85,7 @@ function App() {
     await refreshStatus();
   };
 
-  const setNetworkRecordingFilter = async (filter: { pathKeyword: string; pathMatchMode: 'contains' | 'regex'; filterMode: 'all' | 'allow' | 'deny'; methods: string[]; resourceTypes: string[] }) => {
+  const setNetworkRecordingFilter = async (filter: { pathKeyword: string; pathMatchMode: 'contains' | 'regex'; filterMode: 'all' | 'allow' | 'deny'; methods: string[]; resourceTypes: string[]; bodyPreviewLimit: '256kb' | '1mb' | '5mb' }) => {
     await chrome.runtime.sendMessage({ type: 'NETWORK_RECORDING_FILTER_SET', payload: filter });
     await refreshStatus();
   };
@@ -192,7 +192,7 @@ function App() {
             {
               key: 'tools',
               label: '工具箱',
-              children: <ToolboxTab runtimeConnected={runtime.wsConnected} proxyMode={runtime.proxyMode ?? 'system'} networkRecordingEnabled={Boolean(runtime.networkRecordingEnabled)} networkEntryCount={Number(runtime.networkEntryCount ?? 0)} networkEntries={networkEntries} networkRecordingFilter={runtime.networkRecordingFilter ?? { pathKeyword: '', pathMatchMode: 'contains', filterMode: 'all', methods: [], resourceTypes: ['XHR'] }} automationTasks={automationTasks} onSetProxy={(mode) => void setProxy(mode)} onSetNetworkRecording={(enabled) => void setNetworkRecording(enabled)} onSetNetworkRecordingFilter={(filter) => void setNetworkRecordingFilter(filter)} onClearNetworkRecording={() => void clearNetworkRecording()} onExportNetworkCurl={() => void exportNetworkCurl()} onCreateMockFromEntry={(entry) => void createMockFromEntry(entry)} curlOutput={curlOutput} onUpsertTask={(name, cron, script) => void upsertTask(name, cron, script)} onDeleteTask={(id) => void deleteTask(id)} />
+              children: <ToolboxTab runtimeConnected={runtime.wsConnected} proxyMode={runtime.proxyMode ?? 'system'} networkRecordingEnabled={Boolean(runtime.networkRecordingEnabled)} networkEntryCount={Number(runtime.networkEntryCount ?? 0)} networkEntries={networkEntries} networkRecordingFilter={runtime.networkRecordingFilter ?? { pathKeyword: '', pathMatchMode: 'contains', filterMode: 'all', methods: [], resourceTypes: ['XHR'], bodyPreviewLimit: '256kb' }} automationTasks={automationTasks} onSetProxy={(mode) => void setProxy(mode)} onSetNetworkRecording={(enabled) => void setNetworkRecording(enabled)} onSetNetworkRecordingFilter={(filter) => void setNetworkRecordingFilter(filter)} onClearNetworkRecording={() => void clearNetworkRecording()} onExportNetworkCurl={() => void exportNetworkCurl()} onCreateMockFromEntry={(entry) => void createMockFromEntry(entry)} curlOutput={curlOutput} onUpsertTask={(name, cron, script) => void upsertTask(name, cron, script)} onDeleteTask={(id) => void deleteTask(id)} />
             },
             {
               key: 'mock',

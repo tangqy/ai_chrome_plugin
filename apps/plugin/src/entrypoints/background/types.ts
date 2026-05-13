@@ -74,6 +74,11 @@ export type NetworkEntry = {
   responseHeaders?: Record<string, string>;
   responseBody?: string;
   responseMimeType?: string;
+  requestBodySize?: number;
+  responseBodySize?: number;
+  requestBodyTruncated?: boolean;
+  responseBodyTruncated?: boolean;
+  captureError?: string;
   ts: number;
 };
 
@@ -86,4 +91,5 @@ export type NetworkRecordingFilter = {
   filterMode: 'all' | 'allow' | 'deny';
   methods: string[];
   resourceTypes: string[];
+  bodyPreviewLimit: '256kb' | '1mb' | '5mb';
 };

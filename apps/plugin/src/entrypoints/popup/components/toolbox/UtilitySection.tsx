@@ -12,8 +12,8 @@ type Props = {
   curlOutput: string;
   onSetProxy: (mode: 'system' | 'direct') => void;
   onSetNetworkRecording: (enabled: boolean) => void;
-  networkRecordingFilter: { pathKeyword: string; pathMatchMode: 'contains' | 'regex'; filterMode: 'all' | 'allow' | 'deny'; methods: string[]; resourceTypes: string[] };
-  onSetNetworkRecordingFilter: (filter: { pathKeyword: string; pathMatchMode: 'contains' | 'regex'; filterMode: 'all' | 'allow' | 'deny'; methods: string[]; resourceTypes: string[] }) => void;
+  networkRecordingFilter: { pathKeyword: string; pathMatchMode: 'contains' | 'regex'; filterMode: 'all' | 'allow' | 'deny'; methods: string[]; resourceTypes: string[]; bodyPreviewLimit: '256kb' | '1mb' | '5mb' };
+  onSetNetworkRecordingFilter: (filter: { pathKeyword: string; pathMatchMode: 'contains' | 'regex'; filterMode: 'all' | 'allow' | 'deny'; methods: string[]; resourceTypes: string[]; bodyPreviewLimit: '256kb' | '1mb' | '5mb' }) => void;
   onClearNetworkRecording: () => void;
   onExportNetworkCurl: () => void;
   onCreateMockFromEntry: (entry: NetworkEntry) => void;
@@ -117,6 +117,16 @@ export function UtilitySection(props: Props) {
         style={{ width: '100%' }}
         onChange={(v) => onSetNetworkRecordingFilter({ ...networkRecordingFilter, resourceTypes: v })}
         options={['XHR', 'FETCH', 'DOCUMENT', 'SCRIPT', 'STYLESHEET', 'IMAGE', 'MEDIA', 'FONT', 'OTHER'].map((v) => ({ label: v, value: v }))}
+      />
+      <Select
+        value={networkRecordingFilter.bodyPreviewLimit}
+        style={{ width: '100%' }}
+        onChange={(v) => onSetNetworkRecordingFilter({ ...networkRecordingFilter, bodyPreviewLimit: v })}
+        options={[
+          { label: '体预览阈值：256KB', value: '256kb' },
+          { label: '体预览阈值：1MB', value: '1mb' },
+          { label: '体预览阈值：5MB', value: '5mb' }
+        ]}
       />
       <Space>
         <Button type={networkRecordingEnabled ? 'default' : 'primary'} onClick={() => onSetNetworkRecording(true)}>开启录制</Button>

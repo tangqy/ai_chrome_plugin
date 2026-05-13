@@ -49,7 +49,8 @@ export const state: BackgroundState = {
     pathMatchMode: 'contains',
     filterMode: 'all',
     methods: [],
-    resourceTypes: ['XHR']
+    resourceTypes: ['XHR'],
+    bodyPreviewLimit: '256kb'
   }
 };
 
@@ -81,7 +82,8 @@ export async function hydrateState() {
         pathMatchMode: filter.pathMatchMode === 'regex' ? 'regex' : 'contains',
         filterMode: filter.filterMode === 'allow' || filter.filterMode === 'deny' ? filter.filterMode : 'all',
         methods: Array.isArray(filter.methods) ? filter.methods.map((x) => String(x).toUpperCase()) : [],
-        resourceTypes: Array.isArray(filter.resourceTypes) ? filter.resourceTypes.map((x) => String(x).toUpperCase()) : ['XHR']
+        resourceTypes: Array.isArray(filter.resourceTypes) ? filter.resourceTypes.map((x) => String(x).toUpperCase()) : ['XHR'],
+        bodyPreviewLimit: filter.bodyPreviewLimit === '1mb' || filter.bodyPreviewLimit === '5mb' ? filter.bodyPreviewLimit : '256kb'
       };
     }
   } catch {}

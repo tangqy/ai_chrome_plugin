@@ -200,6 +200,29 @@ async fn handle_ws_json(
         return Ok(());
     }
 
+    if typ == "network_body_chunk" {
+        let payload = value.get("payload").cloned().unwrap_or_default();
+        let ts = now_ms();
+        let url = payload.get("url").and_then(|v| v.as_str()).unwrap_or("-");
+        let line = serde_json::json!({
+            "kind": "network_body_chunk",
+            "ts": ts,
+            "tabId": payload.get("tabId").and_then(|v| v.as_i64()),
+            "requestId": payload.get("requestId").and_then(|v| v.as_str()).unwrap_or("-"),
+            "method": payload.get("method").and_then(|v| v.as_str()).unwrap_or("-"),
+            "url": url,
+            "part": payload.get("part").and_then(|v| v.as_str()).unwrap_or("-"),
+            "chunkIndex": payload.get("chunkIndex").and_then(|v| v.as_u64()).unwrap_or(0),
+            "totalChunks": payload.get("totalChunks").and_then(|v| v.as_u64()).unwrap_or(1),
+            "contentSha256": payload.get("contentSha256").and_then(|v| v.as_str()).unwrap_or(""),
+            "chunkSha256": payload.get("chunkSha256").and_then(|v| v.as_str()).unwrap_or(""),
+            "chunk": payload.get("chunk").and_then(|v| v.as_str()).unwrap_or("")
+        })
+        .to_string();
+        write_line(log_target, &line, Some(url), ts).await;
+        return Ok(());
+    }
+
     if typ == "page_context" {
         let payload = value.get("payload").cloned().unwrap_or_default();
         let tab_id = payload.get("tabId").and_then(|v| v.as_i64()).map(|v| v as i32);
@@ -384,7 +407,8 @@ async fn write_line(log_target: &SharedLogTarget, line: &str, url: Option<&str>,
 async fn append_line_to_file(line: &str, url: Option<&str>, ts_ms: u64) -> anyhow::Result<()> {
     create_dir_all("logs").await?;
     let domain = sanitize_domain(url.unwrap_or("service"));
-    let path = format!("logs/{}_{}.log", date_string(ts_ms), domain);
+    let category = detect_log_category(line);
+    let path = format!("logs/{}_{}_{}.log", date_string(ts_ms), domain, category);
     let mut f = OpenOptions::new()
         .create(true)
         .append(true)
@@ -392,6 +416,20 @@ async fn append_line_to_file(line: &str, url: Option<&str>, ts_ms: u64) -> anyho
         .await?;
     f.write_all(format!("{line}\n").as_bytes()).await?;
     Ok(())
+}
+
+fn detect_log_category(line: &str) -> &'static str {
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+        if let Some(kind) = v.get("kind").and_then(|x| x.as_str()) {
+            if kind.starts_with("network_") {
+                return "network";
+            }
+            if kind.starts_with("console_") {
+                return "console";
+            }
+        }
+    }
+    "service"
 }
 
 fn shell_escape(s: &str) -> String {

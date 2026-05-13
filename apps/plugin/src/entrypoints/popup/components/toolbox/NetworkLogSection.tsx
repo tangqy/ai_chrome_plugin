@@ -87,6 +87,11 @@ export function NetworkLogSection({ entries, onClear, onCreateMockFromEntry }: P
                     {JSON.stringify(
                       {
                         statusCode: item.statusCode,
+                        requestBodySize: item.requestBodySize,
+                        responseBodySize: item.responseBodySize,
+                        requestBodyTruncated: item.requestBodyTruncated,
+                        responseBodyTruncated: item.responseBodyTruncated,
+                        captureError: item.captureError,
                         requestHeaders: item.headers,
                         requestBody: item.postData ?? '',
                         responseHeaders: item.responseHeaders ?? {},
