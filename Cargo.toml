@@ -1,7 +1,8 @@
 [workspace]
 members = [
   "crates/rust-bridge",
-  "crates/rust-shared"
+  "crates/rust-shared",
+  "apps/gui/src-tauri"
 ]
 resolver = "2"
 
