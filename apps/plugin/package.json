@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.2.2",
+    "@wujie/logger-ts": "workspace:*",
     "antd": "^6.3.7",
     "mockjs": "^1.1.0",
     "qrcode": "^1.5.4",

@@ -12,6 +12,7 @@
     "@ant-design/icons": "^6.2.2",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@wujie/logger-ts": "workspace:*",
     "antd": "^6.3.7",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

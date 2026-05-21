@@ -19,6 +19,9 @@ importers:
       '@tauri-apps/plugin-dialog':
         specifier: ^2.7.1
         version: 2.7.1
+      '@wujie/logger-ts':
+        specifier: workspace:*
+        version: link:../../packages/logger-ts
       antd:
         specifier: ^6.3.7
         version: 6.3.7(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -56,6 +59,9 @@ importers:
       '@ant-design/icons':
         specifier: ^6.2.2
         version: 6.2.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@wujie/logger-ts':
+        specifier: workspace:*
+        version: link:../../packages/logger-ts
       antd:
         specifier: ^6.3.7
         version: 6.3.7(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -93,6 +99,12 @@ importers:
       wxt:
         specifier: ^0.20.6
         version: 0.20.25(@types/node@25.6.2)(jiti@2.7.0)(lightningcss@1.32.0)(rollup@4.60.4)
+
+  packages/logger-ts:
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
 
   packages/protocol-ts:
     devDependencies:
