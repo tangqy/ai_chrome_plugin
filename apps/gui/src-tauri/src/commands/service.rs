@@ -66,6 +66,7 @@ pub async fn start_bridge(state: State<'_, AppState>) -> Result<(), String> {
 
     let mut child = cmd
         .current_dir(workspace_root)
+        .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()

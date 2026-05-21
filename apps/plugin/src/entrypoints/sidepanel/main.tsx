@@ -11,6 +11,7 @@ function App() {
 
   React.useEffect(() => {
     const handler = (message: unknown) => {
+      console.log('[sidepanel] received runtime message:', message);
       const m = message as { type?: string; payload?: unknown };
       if (m?.type === RuntimeMessageTypes.humanVerifyPromptPush) {
         setTask((m.payload as HumanVerifyTask | null) ?? null);

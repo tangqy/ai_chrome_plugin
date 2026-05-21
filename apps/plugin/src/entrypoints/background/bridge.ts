@@ -79,9 +79,11 @@ export function callBridge(type: string, payload: Record<string, unknown>) {
 }
 
 export function initBridge() {
-  // lazy by default: do not connect on extension startup.
+  // 不再使用懒加载，启动直接连接
+  lazyMode = false;
   state.wsConnected = false;
   broadcastSnapshot();
+  connectBridge();
 }
 
 export function addBridgeMessageListener(listener: BridgeMessageListener) {

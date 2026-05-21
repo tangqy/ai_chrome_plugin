@@ -6,6 +6,7 @@ import ServicePanel from './pages/ServicePanel';
 import GitPanel from './pages/GitPanel';
 import AgentPanel from './pages/AgentPanel';
 import LogsPanel from './pages/LogsPanel';
+import BridgePanel from './pages/BridgePanel';
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
               <Route path="service" element={<ServicePanel />} />
               <Route path="git" element={<GitPanel />} />
               <Route path="logs" element={<LogsPanel />} />
+              <Route path="bridge" element={<BridgePanel />} />
               <Route path="agent" element={<AgentPanel />} />
             </Route>
           </Routes>

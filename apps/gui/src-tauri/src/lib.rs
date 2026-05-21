@@ -95,10 +95,19 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
-                let app_handle = app_handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    let _ = stop_bridge(app_handle.state::<AppState>()).await;
-                });
+                // 阻塞式地杀掉子进程，因为如果是异步的，可能 Tauri 直接退出了，子进程变成了孤儿
+                let state = app_handle.state::<AppState>();
+                let process_clone = state.bridge_process.clone();
+                // 由于我们在 run 循环里，直接起一个 blocking 线程去杀
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    rt.block_on(async {
+                        let mut process = process_clone.lock().await;
+                        if let Some(mut child) = process.take() {
+                            let _ = child.kill().await;
+                        }
+                    });
+                }).join().unwrap_or_default();
             }
         });
 }

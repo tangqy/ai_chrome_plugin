@@ -27,6 +27,7 @@ export default defineBackground(() => {
     broadcastSnapshot();
 
     addBridgeMessageListener((msg) => {
+      console.log('[background] received ws message:', msg);
       handleBridgeHumanVerifyMessage(msg);
     });
   })();

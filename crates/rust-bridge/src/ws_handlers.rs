@@ -100,6 +100,7 @@ async fn handle_ws_connection(
                                 &last_print_hash,
                                 &log_target,
                                 &human_feedback,
+                                &ws_broadcast,
                             )
                             .await?;
                         }
@@ -123,6 +124,7 @@ async fn handle_ws_json(
     last_print_hash: &SharedPrintHash,
     log_target: &SharedLogTarget,
     human_feedback: &SharedHumanFeedback,
+    ws_broadcast: &WsBroadcast,
 ) -> anyhow::Result<()> {
     let typ = value.get("type").and_then(|v| v.as_str()).unwrap_or_default();
     let request_id = value
@@ -401,6 +403,19 @@ async fn handle_ws_json(
             "output": lines.join("\\n")
         });
         write.send(Message::Text(resp.to_string())).await?;
+    }
+
+    if typ == "validation_request_human_action" {
+        if let Some(payload) = value.get("payload") {
+            let msg = serde_json::json!({
+                "type": "validation_request_human_action",
+                "ts": now_ms(),
+                "payload": payload
+            })
+            .to_string();
+            let _ = ws_broadcast.send(msg);
+        }
+        return Ok(());
     }
 
     Ok(())

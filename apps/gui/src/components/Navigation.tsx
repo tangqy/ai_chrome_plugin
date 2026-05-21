@@ -1,5 +1,5 @@
 import { Layout, Menu } from 'antd';
-import { HomeOutlined, GithubOutlined, RobotOutlined, FileTextOutlined } from '@ant-design/icons';
+import { HomeOutlined, GithubOutlined, RobotOutlined, FileTextOutlined, ApiOutlined } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const { Sider } = Layout;
@@ -23,6 +23,11 @@ const Navigation = () => {
       key: '/logs',
       icon: <FileTextOutlined />,
       label: '日志查看',
+    },
+    {
+      key: '/bridge',
+      icon: <ApiOutlined />,
+      label: 'Bridge 命令',
     },
     {
       key: '/agent',

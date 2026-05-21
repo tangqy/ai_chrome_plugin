@@ -23,7 +23,10 @@ async function openSidePanelForActiveTab() {
 }
 
 function pushToSidePanel(task: HumanVerifyTask | null) {
-  void chrome.runtime.sendMessage({ type: RuntimeMessageTypes.humanVerifyPromptPush, payload: task }).catch(() => {});
+  console.log('[humanVerify] pushing task to side panel:', task);
+  void chrome.runtime.sendMessage({ type: RuntimeMessageTypes.humanVerifyPromptPush, payload: task }).catch((err) => {
+    console.error('[humanVerify] push to side panel failed:', err);
+  });
 }
 
 export function setHumanVerifyTask(task: HumanVerifyTask | null) {
@@ -37,7 +40,9 @@ export function getHumanVerifyTask() {
 }
 
 export function handleBridgeHumanVerifyMessage(message: unknown) {
+  console.log('[humanVerify] received bridge message:', message);
   const task = extractHumanVerifyTaskFromBridgeMessage(message);
+  console.log('[humanVerify] extracted task:', task);
   if (!task) return false;
   setHumanVerifyTask(task);
   return true;

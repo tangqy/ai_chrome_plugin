@@ -46,12 +46,15 @@ export type RuntimeMessage =
   | { type: typeof RuntimeMessageTypes.humanVerifyFeedbackSubmit; payload: HumanFeedback };
 
 export function isHumanVerifyTask(input: unknown): input is HumanVerifyTask {
-  const v = input as HumanVerifyTask;
+  const v = input as any;
+  if (!v || typeof v !== 'object') return false;
+  
+  const hasTaskId = typeof v.taskId === 'string' || typeof v.task_id === 'string';
+  const hasTraceId = typeof v.traceId === 'string' || typeof v.trace_id === 'string';
+  
   return (
-    !!v &&
-    typeof v === 'object' &&
-    typeof v.taskId === 'string' &&
-    typeof v.traceId === 'string' &&
+    hasTaskId &&
+    hasTraceId &&
     typeof v.title === 'string' &&
     Array.isArray(v.steps)
   );
@@ -60,14 +63,34 @@ export function isHumanVerifyTask(input: unknown): input is HumanVerifyTask {
 export function extractHumanVerifyTaskFromBridgeMessage(msg: unknown): HumanVerifyTask | null {
   const m = msg as { type?: unknown; payload?: unknown; task?: unknown };
   const type = typeof m?.type === 'string' ? m.type : '';
+  
+  // 辅助函数：把带有 snake_case 的对象转成 camelCase 的 HumanVerifyTask
+  const normalizeTask = (input: any): HumanVerifyTask | null => {
+    if (!isHumanVerifyTask(input)) return null;
+    const rawTask = input as any;
+    
+    return {
+      taskId: String(rawTask.taskId || rawTask.task_id || ''),
+      traceId: String(rawTask.traceId || rawTask.trace_id || ''),
+      title: rawTask.title,
+      steps: rawTask.steps.map((s: any) => ({
+        stepId: s.stepId || s.step_id,
+        type: s.type || s.typ,
+        instruction: s.instruction,
+        expected: s.expected,
+        selectorHint: s.selectorHint || s.selector_hint,
+        target: s.target
+      }))
+    };
+  };
+
   const direct = (msg as { task?: unknown })?.task;
-  if (isHumanVerifyTask(direct)) return direct;
+  const directTask = normalizeTask(direct);
+  if (directTask) return directTask;
 
   const payload = m?.payload as { task?: unknown } | undefined;
-  if (payload?.task && isHumanVerifyTask(payload.task)) return payload.task;
-
-  if (type === 'validation_request_human_action' && payload?.task && isHumanVerifyTask(payload.task)) return payload.task;
-  if (type === 'human_verify_prompt' && payload?.task && isHumanVerifyTask(payload.task)) return payload.task;
+  const payloadTask = normalizeTask(payload?.task);
+  if (payloadTask) return payloadTask;
 
   return null;
 }
