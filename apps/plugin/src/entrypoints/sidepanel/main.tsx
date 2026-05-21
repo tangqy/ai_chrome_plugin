@@ -3,34 +3,22 @@ import { createRoot } from 'react-dom/client';
 import { Alert, Card, List, Space, Typography } from 'antd';
 import 'antd/dist/reset.css';
 
-type Step = {
-  stepId: string;
-  type: 'navigate' | 'click' | 'input' | 'observe' | 'mock_trigger';
-  instruction: string;
-  expected?: string;
-};
-
-type HumanTask = {
-  taskId: string;
-  traceId: string;
-  title: string;
-  steps: Step[];
-};
+import { RuntimeMessageTypes, type HumanVerifyTask } from '../shared/validation';
 
 function App() {
-  const [task, setTask] = React.useState<HumanTask | null>(null);
+  const [task, setTask] = React.useState<HumanVerifyTask | null>(null);
 
   React.useEffect(() => {
     const handler = (message: unknown) => {
       const m = message as { type?: string; payload?: unknown };
-      if (m?.type === 'HUMAN_VERIFY_PROMPT_PUSH') {
-        setTask((m.payload as HumanTask | null) ?? null);
+      if (m?.type === RuntimeMessageTypes.humanVerifyPromptPush) {
+        setTask((m.payload as HumanVerifyTask | null) ?? null);
       }
     };
 
     chrome.runtime.onMessage.addListener(handler);
-    void chrome.runtime.sendMessage({ type: 'HUMAN_VERIFY_PROMPT_GET' }).then((res) => {
-      if (res?.ok) setTask((res.payload?.task as HumanTask | null) ?? null);
+    void chrome.runtime.sendMessage({ type: RuntimeMessageTypes.humanVerifyPromptGet }).then((res) => {
+      if (res?.ok) setTask((res.payload?.task as HumanVerifyTask | null) ?? null);
     });
 
     return () => chrome.runtime.onMessage.removeListener(handler);
@@ -81,4 +69,3 @@ function App() {
 }
 
 createRoot(document.getElementById('root')!).render(<App />);
-

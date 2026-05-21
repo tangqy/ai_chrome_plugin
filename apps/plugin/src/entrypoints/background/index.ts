@@ -1,4 +1,4 @@
-import { initBridge, callBridge, ensureBridgeConnected, sendToBridge, setBridgeLogTarget } from './bridge';
+import { initBridge, callBridge, ensureBridgeConnected, sendToBridge, setBridgeLogTarget, addBridgeMessageListener } from './bridge';
 import { initAutomationTicker } from './cron';
 import {
   handleCurlImport,
@@ -12,11 +12,11 @@ import {
 import { initNetworkRecorder } from './network';
 import { runDomainSync, runSyncData } from './operations';
 import { broadcastSnapshot, hydrateState, persistState, snapshot, state } from './state';
+import { RuntimeMessageTypes } from '../shared/validation';
+import { getHumanVerifyTask, handleBridgeHumanVerifyMessage, setHumanVerifyTask } from './humanVerify';
 
 export default defineBackground(() => {
   console.log('[wujie-ai] background started');
-
-  let humanVerifyTask: unknown = null;
 
   void (async () => {
     await hydrateState();
@@ -24,6 +24,10 @@ export default defineBackground(() => {
     initAutomationTicker();
     initNetworkRecorder();
     broadcastSnapshot();
+
+    addBridgeMessageListener((msg) => {
+      handleBridgeHumanVerifyMessage(msg);
+    });
   })();
 
   setInterval(() => {
@@ -269,23 +273,14 @@ export default defineBackground(() => {
       return true;
     }
 
-    if (message?.type === 'HUMAN_VERIFY_PROMPT_SET') {
-      humanVerifyTask = message?.payload?.task ?? null;
-      void chrome.runtime.sendMessage({ type: 'HUMAN_VERIFY_PROMPT_PUSH', payload: humanVerifyTask }).catch(() => {});
-      void (async () => {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        const tabId = tab?.id;
-        const sidePanel = (chrome as unknown as { sidePanel?: { open?: (args: { tabId: number }) => Promise<void> | void; setOptions?: (args: { tabId: number; path?: string; enabled?: boolean }) => Promise<void> | void } }).sidePanel;
-        if (!sidePanel?.open || !sidePanel?.setOptions || !tabId) return;
-        await Promise.resolve(sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' }));
-        await Promise.resolve(sidePanel.open({ tabId }));
-      })().catch(() => {});
+    if (message?.type === RuntimeMessageTypes.humanVerifyPromptSet) {
+      setHumanVerifyTask(message?.payload?.task ?? null);
       sendResponse({ ok: true });
       return true;
     }
 
-    if (message?.type === 'HUMAN_VERIFY_PROMPT_GET') {
-      sendResponse({ ok: true, payload: { task: humanVerifyTask } });
+    if (message?.type === RuntimeMessageTypes.humanVerifyPromptGet) {
+      sendResponse({ ok: true, payload: { task: getHumanVerifyTask() } });
       return true;
     }
 

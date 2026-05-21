@@ -5,11 +5,14 @@ type PendingCall = {
   timer: ReturnType<typeof setTimeout>;
 };
 
+export type BridgeMessageListener = (message: unknown) => void;
+
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let bridgeDisabled = false;
 let lazyMode = true;
 const pendingBridgeCalls = new Map<string, PendingCall>();
+const messageListeners = new Set<BridgeMessageListener>();
 
 function settlePendingAsUnavailable() {
   for (const [, pending] of pendingBridgeCalls) {
@@ -81,6 +84,11 @@ export function initBridge() {
   broadcastSnapshot();
 }
 
+export function addBridgeMessageListener(listener: BridgeMessageListener) {
+  messageListeners.add(listener);
+  return () => messageListeners.delete(listener);
+}
+
 function connectBridge() {
   if (bridgeDisabled) return;
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
@@ -113,6 +121,11 @@ function connectBridge() {
   socket.onmessage = (event) => {
     try {
       const msg = JSON.parse(String(event.data));
+      for (const listener of messageListeners) {
+        try {
+          listener(msg);
+        } catch {}
+      }
       if (msg?.type === 'ping') {
         socket?.send(JSON.stringify({ type: 'pong', ts: Date.now() }));
       }
