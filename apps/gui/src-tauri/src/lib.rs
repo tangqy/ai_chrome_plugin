@@ -10,6 +10,7 @@ use commands::git::{
 use commands::logs::{
     get_logs, get_logs_by_trace, write_log, cleanup_logs, get_current_trace,
 };
+use commands::service::{get_bridge_status, start_bridge, stop_bridge};
 use scheduler::{Scheduler, get_cron_jobs};
 use std::sync::Arc;
 use tauri::Manager;
@@ -60,6 +61,14 @@ pub fn run() {
             };
             
             app.manage(state);
+
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match start_bridge(app_handle.state::<AppState>()).await {
+                    Ok(()) => {}
+                    Err(err) => tracing::error!("Auto-start bridge failed: {}", err),
+                }
+            });
             
             tracing::info!("App setup complete");
             Ok(())
@@ -72,6 +81,9 @@ pub fn run() {
             get_commit_history,
             search_commits,
             get_commit_detail,
+            get_bridge_status,
+            start_bridge,
+            stop_bridge,
             get_logs,
             get_logs_by_trace,
             write_log,
@@ -79,6 +91,14 @@ pub fn run() {
             get_current_trace,
             get_cron_jobs,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+                let app_handle = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = stop_bridge(app_handle.state::<AppState>()).await;
+                });
+            }
+        });
 }

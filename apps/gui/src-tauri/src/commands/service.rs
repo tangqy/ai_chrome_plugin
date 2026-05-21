@@ -53,9 +53,19 @@ pub async fn start_bridge(state: State<'_, AppState>) -> Result<(), String> {
         return Err("Bridge is already running".to_string());
     }
 
-    let mut child = tokio::process::Command::new("cargo")
-        .args(["run", "-p", "rust-bridge"])
-        .current_dir(crate_root())
+    let workspace_root = workspace_root();
+    let bridge_bin = resolve_bridge_bin(&workspace_root);
+
+    let mut cmd = if let Some(bin) = bridge_bin {
+        tokio::process::Command::new(bin)
+    } else {
+        let mut cmd = tokio::process::Command::new("cargo");
+        cmd.args(["run", "-p", "rust-bridge"]);
+        cmd
+    };
+
+    let mut child = cmd
+        .current_dir(workspace_root)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -111,4 +121,47 @@ fn crate_root() -> std::path::PathBuf {
         .parent()
         .unwrap()
         .to_path_buf()
+}
+
+fn workspace_root() -> std::path::PathBuf {
+    crate_root()
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
+        .unwrap()
+        .to_path_buf()
+}
+
+fn resolve_bridge_bin(workspace_root: &std::path::Path) -> Option<std::path::PathBuf> {
+    if let Ok(bin) = std::env::var("WUJIE_BRIDGE_BIN") {
+        let bin = bin.trim();
+        if !bin.is_empty() {
+            return Some(std::path::PathBuf::from(bin));
+        }
+    }
+
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+
+    let bin_name = if cfg!(windows) { "rust-bridge.exe" } else { "rust-bridge" };
+    let dist_name = if cfg!(windows) {
+        "wujie-mcp-bridge.exe"
+    } else {
+        "wujie-mcp-bridge"
+    };
+
+    let mut candidates = vec![
+        workspace_root.join("out").join(dist_name),
+        workspace_root.join("target").join("release").join(bin_name),
+    ];
+
+    if let Some(exe_dir) = exe_dir {
+        candidates.push(exe_dir.join(dist_name));
+        candidates.push(exe_dir.join(bin_name));
+        candidates.push(exe_dir.join("../Resources").join(dist_name));
+        candidates.push(exe_dir.join("../Resources").join(bin_name));
+    }
+
+    candidates.into_iter().find(|p| p.exists())
 }
