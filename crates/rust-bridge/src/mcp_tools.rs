@@ -3,11 +3,13 @@ use rust_shared::protocol::{
 };
 
 use crate::session::{SharedErrors, SharedSessions};
+use tokio::sync::broadcast::Sender;
 
 pub async fn handle_request(
     req: BridgeRequest,
     errors: SharedErrors,
     sessions: SharedSessions,
+    ws_broadcast: Sender<String>,
     now_ms: u64,
 ) -> BridgeResponse {
     match req {
@@ -65,6 +67,22 @@ pub async fn handle_request(
                     ts: now_ms,
                     total_errors: errors_guard.len(),
                     total_sessions: sessions_guard.len(),
+                },
+            }
+        }
+        BridgeRequest::ValidationRequestHumanAction { request_id, payload } => {
+            let msg = serde_json::json!({
+                "type": "validation_request_human_action",
+                "ts": now_ms,
+                "payload": payload
+            })
+            .to_string();
+            match ws_broadcast.send(msg) {
+                Ok(_) => BridgeResponse::ValidationRequestHumanActionResult { request_id, ok: true },
+                Err(err) => BridgeResponse::Error {
+                    request_id,
+                    code: "ws_broadcast_failed".to_string(),
+                    message: err.to_string(),
                 },
             }
         }

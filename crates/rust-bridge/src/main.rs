@@ -3,6 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rust_shared::protocol::{BridgeRequest, BridgeResponse};
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::broadcast;
 use tokio::sync::Mutex;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,24 +26,30 @@ async fn main() -> anyhow::Result<()> {
     let sessions: SharedSessions =
         Arc::new(Mutex::new(std::collections::HashMap::<i32, SessionInfo>::new()));
     let last_print_hash: SharedPrintHash = Arc::new(Mutex::new(String::new()));
+    let (ws_broadcast, _) = broadcast::channel::<String>(128);
 
     let ws_errors = errors.clone();
     let ws_sessions = sessions.clone();
     let ws_print_hash = last_print_hash.clone();
     let log_target = Arc::new(Mutex::new(LogTarget::Both));
     let ws_log_target = log_target.clone();
+    let ws_sender = ws_broadcast.clone();
     tokio::spawn(async move {
         if let Err(err) =
-            ws_handlers::run_ws_server(ws_errors, ws_sessions, ws_print_hash, ws_log_target).await
+            ws_handlers::run_ws_server(ws_errors, ws_sessions, ws_print_hash, ws_log_target, ws_sender).await
         {
             eprintln!("ws server error: {err}");
         }
     });
 
-    run_stdio_loop(errors, sessions).await
+    run_stdio_loop(errors, sessions, ws_broadcast).await
 }
 
-async fn run_stdio_loop(errors: SharedErrors, sessions: SharedSessions) -> anyhow::Result<()> {
+async fn run_stdio_loop(
+    errors: SharedErrors,
+    sessions: SharedSessions,
+    ws_broadcast: broadcast::Sender<String>,
+) -> anyhow::Result<()> {
     let stdin = io::stdin();
     let mut lines = BufReader::new(stdin).lines();
     let mut stdout = io::stdout();
@@ -64,7 +71,7 @@ async fn run_stdio_loop(errors: SharedErrors, sessions: SharedSessions) -> anyho
             }
         };
 
-        let resp = mcp_tools::handle_request(req, errors.clone(), sessions.clone(), now_ms()).await;
+        let resp = mcp_tools::handle_request(req, errors.clone(), sessions.clone(), ws_broadcast.clone(), now_ms()).await;
         stdout
             .write_all(format!("{}\n", serde_json::to_string(&resp)?).as_bytes())
             .await?;

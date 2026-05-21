@@ -16,6 +16,11 @@ pub enum BridgeRequest {
     GetSessions { request_id: String },
     #[serde(rename = "get_status")]
     GetStatus { request_id: String },
+    #[serde(rename = "validation_request_human_action")]
+    ValidationRequestHumanAction {
+        request_id: String,
+        payload: ValidationRequestHumanActionPayload,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,6 +53,30 @@ pub struct StatusItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HumanVerifyStep {
+    pub step_id: String,
+    #[serde(rename = "type")]
+    pub typ: String,
+    pub instruction: String,
+    pub expected: Option<String>,
+    pub selector_hint: Option<String>,
+    pub target: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HumanVerifyTask {
+    pub task_id: String,
+    pub trace_id: String,
+    pub title: String,
+    pub steps: Vec<HumanVerifyStep>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidationRequestHumanActionPayload {
+    pub task: HumanVerifyTask,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum BridgeResponse {
     #[serde(rename = "pong")]
@@ -75,6 +104,8 @@ pub enum BridgeResponse {
         request_id: String,
         status: StatusItem,
     },
+    #[serde(rename = "validation_request_human_action_result")]
+    ValidationRequestHumanActionResult { request_id: String, ok: bool },
     #[serde(rename = "error")]
     Error {
         request_id: String,

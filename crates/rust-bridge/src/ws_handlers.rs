@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::fs::{OpenOptions, create_dir_all};
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::broadcast::Sender;
 use tokio::sync::Mutex;
 use tokio::time::{interval, Duration};
 use tokio_tungstenite::{accept_async, tungstenite::Message, WebSocketStream};
@@ -14,11 +15,14 @@ use crate::LogTarget;
 
 type SharedLogTarget = Arc<Mutex<LogTarget>>;
 
+pub type WsBroadcast = Sender<String>;
+
 pub async fn run_ws_server(
     errors: SharedErrors,
     sessions: SharedSessions,
     last_print_hash: SharedPrintHash,
     log_target: SharedLogTarget,
+    ws_broadcast: WsBroadcast,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:8787").await?;
     loop {
@@ -27,9 +31,10 @@ pub async fn run_ws_server(
         let sessions = sessions.clone();
         let last_print_hash = last_print_hash.clone();
         let log_target = log_target.clone();
+        let ws_broadcast = ws_broadcast.clone();
         tokio::spawn(async move {
             if let Err(err) =
-                handle_ws_connection(stream, errors, sessions, last_print_hash, log_target).await
+                handle_ws_connection(stream, errors, sessions, last_print_hash, log_target, ws_broadcast).await
             {
                 eprintln!("ws connection error: {err}");
             }
@@ -43,15 +48,26 @@ async fn handle_ws_connection(
     sessions: SharedSessions,
     last_print_hash: SharedPrintHash,
     log_target: SharedLogTarget,
+    ws_broadcast: WsBroadcast,
 ) -> anyhow::Result<()> {
     let ws_stream = accept_async(stream).await?;
     let (mut write, mut read) = ws_stream.split();
     let mut ticker = interval(Duration::from_secs(5));
+    let mut rx = ws_broadcast.subscribe();
 
     loop {
         tokio::select! {
             _ = ticker.tick() => {
                 write.send(Message::Text("{\"type\":\"ping\"}".to_string())).await?;
+            }
+            maybe_push = rx.recv() => {
+                match maybe_push {
+                    Ok(text) => {
+                        write.send(Message::Text(text)).await?;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
             }
             maybe_msg = read.next() => {
                 match maybe_msg {
