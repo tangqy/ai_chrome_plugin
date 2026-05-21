@@ -1,14 +1,16 @@
 use rust_shared::protocol::{
-    BridgeRequest, BridgeResponse, ConsoleErrorItem, SessionItem, StatusItem,
+    BridgeRequest, BridgeResponse, ConsoleErrorItem, SessionItem, StatusItem, TraceBundleSummary,
 };
 
 use crate::session::{SharedErrors, SharedSessions};
+use crate::validation::{get_feedback, SharedHumanFeedback};
 use tokio::sync::broadcast::Sender;
 
 pub async fn handle_request(
     req: BridgeRequest,
     errors: SharedErrors,
     sessions: SharedSessions,
+    human_feedback: SharedHumanFeedback,
     ws_broadcast: Sender<String>,
     now_ms: u64,
 ) -> BridgeResponse {
@@ -70,7 +72,10 @@ pub async fn handle_request(
                 },
             }
         }
-        BridgeRequest::ValidationRequestHumanAction { request_id, payload } => {
+        BridgeRequest::ValidationRequestHumanAction {
+            request_id,
+            payload,
+        } => {
             let msg = serde_json::json!({
                 "type": "validation_request_human_action",
                 "ts": now_ms,
@@ -78,12 +83,44 @@ pub async fn handle_request(
             })
             .to_string();
             match ws_broadcast.send(msg) {
-                Ok(_) => BridgeResponse::ValidationRequestHumanActionResult { request_id, ok: true },
+                Ok(_) => BridgeResponse::ValidationRequestHumanActionResult {
+                    request_id,
+                    ok: true,
+                },
                 Err(err) => BridgeResponse::Error {
                     request_id,
                     code: "ws_broadcast_failed".to_string(),
                     message: err.to_string(),
                 },
+            }
+        }
+        BridgeRequest::ValidationCollectTraceBundle {
+            request_id,
+            payload,
+        } => {
+            let feedback = get_feedback(&human_feedback, &payload.task_id).await;
+            let guard = errors.lock().await;
+            let console_items = guard
+                .iter()
+                .rev()
+                .take(10)
+                .map(|e| ConsoleErrorItem {
+                    message: e.message.clone(),
+                    url: e.url.clone(),
+                    tab_id: e.tab_id,
+                    ts: e.ts,
+                })
+                .collect::<Vec<_>>();
+            let bundle = TraceBundleSummary {
+                task_id: payload.task_id,
+                ts: now_ms,
+                feedback,
+                console_errors: console_items,
+            };
+            BridgeResponse::ValidationCollectTraceBundleResult {
+                request_id,
+                ok: true,
+                bundle,
             }
         }
     }

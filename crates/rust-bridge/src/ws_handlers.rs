@@ -11,6 +11,7 @@ use tokio::time::{interval, Duration};
 use tokio_tungstenite::{accept_async, tungstenite::Message, WebSocketStream};
 
 use crate::session::{ConsoleErrorEvent, SessionInfo, SharedErrors, SharedPrintHash, SharedSessions};
+use crate::validation::{push_feedback, SharedHumanFeedback};
 use crate::LogTarget;
 
 type SharedLogTarget = Arc<Mutex<LogTarget>>;
@@ -23,6 +24,7 @@ pub async fn run_ws_server(
     last_print_hash: SharedPrintHash,
     log_target: SharedLogTarget,
     ws_broadcast: WsBroadcast,
+    human_feedback: SharedHumanFeedback,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:8787").await?;
     loop {
@@ -32,9 +34,19 @@ pub async fn run_ws_server(
         let last_print_hash = last_print_hash.clone();
         let log_target = log_target.clone();
         let ws_broadcast = ws_broadcast.clone();
+        let human_feedback = human_feedback.clone();
         tokio::spawn(async move {
             if let Err(err) =
-                handle_ws_connection(stream, errors, sessions, last_print_hash, log_target, ws_broadcast).await
+                handle_ws_connection(
+                    stream,
+                    errors,
+                    sessions,
+                    last_print_hash,
+                    log_target,
+                    ws_broadcast,
+                    human_feedback,
+                )
+                .await
             {
                 eprintln!("ws connection error: {err}");
             }
@@ -49,6 +61,7 @@ async fn handle_ws_connection(
     last_print_hash: SharedPrintHash,
     log_target: SharedLogTarget,
     ws_broadcast: WsBroadcast,
+    human_feedback: SharedHumanFeedback,
 ) -> anyhow::Result<()> {
     let ws_stream = accept_async(stream).await?;
     let (mut write, mut read) = ws_stream.split();
@@ -86,6 +99,7 @@ async fn handle_ws_connection(
                                 &sessions,
                                 &last_print_hash,
                                 &log_target,
+                                &human_feedback,
                             )
                             .await?;
                         }
@@ -108,6 +122,7 @@ async fn handle_ws_json(
     sessions: &SharedSessions,
     last_print_hash: &SharedPrintHash,
     log_target: &SharedLogTarget,
+    human_feedback: &SharedHumanFeedback,
 ) -> anyhow::Result<()> {
     let typ = value.get("type").and_then(|v| v.as_str()).unwrap_or_default();
     let request_id = value
@@ -254,6 +269,27 @@ async fn handle_ws_json(
             entry.url = url;
             entry.last_seen_ts = now_ms();
         }
+        return Ok(());
+    }
+
+    if typ == "validation_human_feedback" {
+        let payload = value.get("payload").cloned().unwrap_or_default();
+        let task_id = payload.get("taskId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let trace_id = payload.get("traceId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let step_id = payload.get("stepId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        if task_id.is_empty() || trace_id.is_empty() || step_id.is_empty() {
+            return Ok(());
+        }
+        let feedback = rust_shared::protocol::HumanFeedbackItem {
+            task_id,
+            trace_id,
+            step_id,
+            result: payload.get("result").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
+            exception_type: payload.get("exceptionType").and_then(|v| v.as_str()).map(ToString::to_string),
+            comment: payload.get("comment").and_then(|v| v.as_str()).map(ToString::to_string),
+            ts: payload.get("ts").and_then(|v| v.as_u64()).unwrap_or_else(now_ms),
+        };
+        push_feedback(human_feedback, feedback).await;
         return Ok(());
     }
 

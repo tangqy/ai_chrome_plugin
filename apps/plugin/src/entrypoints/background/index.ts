@@ -14,6 +14,7 @@ import { runDomainSync, runSyncData } from './operations';
 import { broadcastSnapshot, hydrateState, persistState, snapshot, state } from './state';
 import { RuntimeMessageTypes } from '../shared/validation';
 import { getHumanVerifyTask, handleBridgeHumanVerifyMessage, setHumanVerifyTask } from './humanVerify';
+import type { HumanFeedback } from '../shared/validation';
 
 export default defineBackground(() => {
   console.log('[wujie-ai] background started');
@@ -281,6 +282,14 @@ export default defineBackground(() => {
 
     if (message?.type === RuntimeMessageTypes.humanVerifyPromptGet) {
       sendResponse({ ok: true, payload: { task: getHumanVerifyTask() } });
+      return true;
+    }
+
+    if (message?.type === RuntimeMessageTypes.humanVerifyFeedbackSubmit) {
+      ensureBridgeConnected();
+      const payload = message?.payload as HumanFeedback;
+      sendToBridge({ type: 'validation_human_feedback', ts: Date.now(), payload });
+      sendResponse({ ok: true });
       return true;
     }
 

@@ -16,16 +16,34 @@ export type HumanVerifyTask = {
   steps: HumanVerifyStep[];
 };
 
+export type HumanFeedback = {
+  taskId: string;
+  traceId: string;
+  stepId: string;
+  result: 'passed' | 'failed' | 'blocked' | 'suspended';
+  exceptionType?:
+    | 'element_not_found'
+    | 'click_no_response'
+    | 'wrong_result'
+    | 'network_error'
+    | 'timeout'
+    | 'other';
+  comment?: string;
+  ts: number;
+};
+
 export const RuntimeMessageTypes = {
   humanVerifyPromptSet: 'HUMAN_VERIFY_PROMPT_SET',
   humanVerifyPromptGet: 'HUMAN_VERIFY_PROMPT_GET',
   humanVerifyPromptPush: 'HUMAN_VERIFY_PROMPT_PUSH',
+  humanVerifyFeedbackSubmit: 'HUMAN_VERIFY_FEEDBACK_SUBMIT',
 } as const;
 
 export type RuntimeMessage =
   | { type: typeof RuntimeMessageTypes.humanVerifyPromptSet; payload: { task: HumanVerifyTask | null } }
   | { type: typeof RuntimeMessageTypes.humanVerifyPromptGet }
-  | { type: typeof RuntimeMessageTypes.humanVerifyPromptPush; payload: HumanVerifyTask | null };
+  | { type: typeof RuntimeMessageTypes.humanVerifyPromptPush; payload: HumanVerifyTask | null }
+  | { type: typeof RuntimeMessageTypes.humanVerifyFeedbackSubmit; payload: HumanFeedback };
 
 export function isHumanVerifyTask(input: unknown): input is HumanVerifyTask {
   const v = input as HumanVerifyTask;
@@ -53,4 +71,3 @@ export function extractHumanVerifyTaskFromBridgeMessage(msg: unknown): HumanVeri
 
   return null;
 }
-

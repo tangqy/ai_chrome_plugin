@@ -21,6 +21,11 @@ pub enum BridgeRequest {
         request_id: String,
         payload: ValidationRequestHumanActionPayload,
     },
+    #[serde(rename = "validation_collect_trace_bundle")]
+    ValidationCollectTraceBundle {
+        request_id: String,
+        payload: ValidationCollectTraceBundlePayload,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,6 +82,31 @@ pub struct ValidationRequestHumanActionPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidationCollectTraceBundlePayload {
+    pub task_id: String,
+    pub level: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HumanFeedbackItem {
+    pub task_id: String,
+    pub trace_id: String,
+    pub step_id: String,
+    pub result: String,
+    pub exception_type: Option<String>,
+    pub comment: Option<String>,
+    pub ts: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TraceBundleSummary {
+    pub task_id: String,
+    pub ts: u64,
+    pub feedback: Vec<HumanFeedbackItem>,
+    pub console_errors: Vec<ConsoleErrorItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum BridgeResponse {
     #[serde(rename = "pong")]
@@ -106,6 +136,12 @@ pub enum BridgeResponse {
     },
     #[serde(rename = "validation_request_human_action_result")]
     ValidationRequestHumanActionResult { request_id: String, ok: bool },
+    #[serde(rename = "validation_collect_trace_bundle_result")]
+    ValidationCollectTraceBundleResult {
+        request_id: String,
+        ok: bool,
+        bundle: TraceBundleSummary,
+    },
     #[serde(rename = "error")]
     Error {
         request_id: String,

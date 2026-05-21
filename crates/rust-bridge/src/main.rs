@@ -16,17 +16,25 @@ pub enum LogTarget {
 mod mcp_tools;
 mod nl_parser;
 mod session;
+mod validation;
 mod ws_handlers;
 
 use session::{ConsoleErrorEvent, SessionInfo, SharedErrors, SharedPrintHash, SharedSessions};
+use validation::SharedHumanFeedback;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let errors: SharedErrors = Arc::new(Mutex::new(Vec::<ConsoleErrorEvent>::new()));
-    let sessions: SharedSessions =
-        Arc::new(Mutex::new(std::collections::HashMap::<i32, SessionInfo>::new()));
+    let sessions: SharedSessions = Arc::new(Mutex::new(std::collections::HashMap::<
+        i32,
+        SessionInfo,
+    >::new()));
     let last_print_hash: SharedPrintHash = Arc::new(Mutex::new(String::new()));
     let (ws_broadcast, _) = broadcast::channel::<String>(128);
+    let human_feedback: SharedHumanFeedback = Arc::new(Mutex::new(std::collections::HashMap::<
+        String,
+        Vec<rust_shared::protocol::HumanFeedbackItem>,
+    >::new()));
 
     let ws_errors = errors.clone();
     let ws_sessions = sessions.clone();
@@ -34,20 +42,29 @@ async fn main() -> anyhow::Result<()> {
     let log_target = Arc::new(Mutex::new(LogTarget::Both));
     let ws_log_target = log_target.clone();
     let ws_sender = ws_broadcast.clone();
+    let ws_human_feedback = human_feedback.clone();
     tokio::spawn(async move {
-        if let Err(err) =
-            ws_handlers::run_ws_server(ws_errors, ws_sessions, ws_print_hash, ws_log_target, ws_sender).await
+        if let Err(err) = ws_handlers::run_ws_server(
+            ws_errors,
+            ws_sessions,
+            ws_print_hash,
+            ws_log_target,
+            ws_sender,
+            ws_human_feedback,
+        )
+        .await
         {
             eprintln!("ws server error: {err}");
         }
     });
 
-    run_stdio_loop(errors, sessions, ws_broadcast).await
+    run_stdio_loop(errors, sessions, human_feedback, ws_broadcast).await
 }
 
 async fn run_stdio_loop(
     errors: SharedErrors,
     sessions: SharedSessions,
+    human_feedback: SharedHumanFeedback,
     ws_broadcast: broadcast::Sender<String>,
 ) -> anyhow::Result<()> {
     let stdin = io::stdin();
@@ -71,7 +88,15 @@ async fn run_stdio_loop(
             }
         };
 
-        let resp = mcp_tools::handle_request(req, errors.clone(), sessions.clone(), ws_broadcast.clone(), now_ms()).await;
+        let resp = mcp_tools::handle_request(
+            req,
+            errors.clone(),
+            sessions.clone(),
+            human_feedback.clone(),
+            ws_broadcast.clone(),
+            now_ms(),
+        )
+        .await;
         stdout
             .write_all(format!("{}\n", serde_json::to_string(&resp)?).as_bytes())
             .await?;
