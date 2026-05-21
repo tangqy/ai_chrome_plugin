@@ -16,6 +16,8 @@ import { broadcastSnapshot, hydrateState, persistState, snapshot, state } from '
 export default defineBackground(() => {
   console.log('[wujie-ai] background started');
 
+  let humanVerifyTask: unknown = null;
+
   void (async () => {
     await hydrateState();
     initBridge();
@@ -264,6 +266,26 @@ export default defineBackground(() => {
       ensureBridgeConnected();
       sendToBridge({ type: 'get_console_errors', ts: Date.now() });
       sendResponse({ ok: true });
+      return true;
+    }
+
+    if (message?.type === 'HUMAN_VERIFY_PROMPT_SET') {
+      humanVerifyTask = message?.payload?.task ?? null;
+      void chrome.runtime.sendMessage({ type: 'HUMAN_VERIFY_PROMPT_PUSH', payload: humanVerifyTask }).catch(() => {});
+      void (async () => {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const tabId = tab?.id;
+        const sidePanel = (chrome as unknown as { sidePanel?: { open?: (args: { tabId: number }) => Promise<void> | void; setOptions?: (args: { tabId: number; path?: string; enabled?: boolean }) => Promise<void> | void } }).sidePanel;
+        if (!sidePanel?.open || !sidePanel?.setOptions || !tabId) return;
+        await Promise.resolve(sidePanel.setOptions({ tabId, enabled: true, path: 'sidepanel.html' }));
+        await Promise.resolve(sidePanel.open({ tabId }));
+      })().catch(() => {});
+      sendResponse({ ok: true });
+      return true;
+    }
+
+    if (message?.type === 'HUMAN_VERIFY_PROMPT_GET') {
+      sendResponse({ ok: true, payload: { task: humanVerifyTask } });
       return true;
     }
 

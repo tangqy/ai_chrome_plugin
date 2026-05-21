@@ -1,132 +1,154 @@
-以下是根据我们全部讨论形成的**技术方案概要**，可直接用于开发评审或启动文档。
+以下是结合当前仓库实现形态的**方案设计（更新版）**，用于在 Trae 内借助插件 MCP 能力形成“自我反馈闭环”。
 
 ---
 
-# 技术方案概要：AI 驱动人工辅助浏览器验证系统
+# 技术方案：Trae + 插件 MCP 的自我反馈闭环
 
 ## 1. 目标
-在 AI 辅助开发过程中，实现 **“AI 生成含日志/断言的代码 → 人工按指令操作浏览器 → AI 自动 Review 日志并自我修复”** 的闭环。降低人工分析成本，加速验证迭代。
+
+在 Trae 的开发工作流中，实现闭环：
+
+**AI 写代码（自动打桩） → 人工按步骤验证页面 → 证据包压缩回传 → AI Review/修复/重试**
+
+核心输出不是“自动化浏览器控制”，而是“标准化人工验证 + 可压缩证据包”，让 AI 能稳定自反馈。
 
 ## 2. 核心原则
-- **人只做“手和眼睛”**：操作、观察、标记异常，不分析代码。
-- **AI 主导思考**：生成操作指令、分析日志、定位问题、生成修复。
-- **标准化通信**：基于 MCP（Model Context Protocol）统一工具调用。
-- **离线回溯**：本地 GUI 旁路记录所有网络请求与日志，事后可查。
 
-## 3. 总体架构
+- 人只做“手和眼睛”：执行、观察、标记异常，不分析代码
+- AI 主导：生成步骤、定位问题、生成修复、决定是否重试/挂起
+- 标准化通信：Trae 通过 MCP 调用本地服务，插件作为浏览器内执行层
+- 证据先行：所有判断基于结构化 `trace/assert/manual_feedback/network/screenshot`
+- token 可控：默认只回传 summary，必要时再拉取 detail/full
+
+## 3. 架构（与当前仓库对齐）
+
+### 3.1 总体架构
 
 ```
-┌─────────────────┐     MCP(JSON-RPC)     ┌──────────────────────┐
-│  AI 编辑器        │ ◄──────────────────► │  浏览器 MCP 服务器    │
-│ (VS Code/Cursor) │                      │  (Node 进程，本地)     │
-└─────────────────┘                      └──────┬───────────────┘
-                                                │
-                                        Native Messaging / WS
-                                                │
-                                        ┌──────▼───────────────┐
-                                        │   浏览器插件           │
-                                        │ (Content Script +    │
-                                        │  Devtools Panel)     │
-                                        └──────┬───────────────┘
-                                               │
-                                    ┌──────────▼──────────┐
-                                    │   Tauri GUI (回溯器)  │  ◄── 旁路记录（fire-and-forget）
-                                    │   SQLite + 时间线UI   │
-                                    └─────────────────────┘
+┌──────────────────────────┐   MCP(JSON-RPC stdio)   ┌──────────────────────────┐
+│ Trae (AI / Skills)        │ ◄──────────────────────► │ 本地服务（GUI 内嵌 bridge） │
+│ - ai-instrumentation      │                        │ - MCP tools               │
+│ - ai-human-verify-loop    │                        │ - 任务/步骤状态机          │
+└──────────────────────────┘                        │ - 证据包压缩（summary）    │
+                                                     │ - SQLite 落库与查询         │
+                                                     └───────────┬──────────────┘
+                                                                 │ local WS
+                                                                 │
+                                                     ┌───────────▼──────────────┐
+                                                     │ 浏览器插件（WXT）           │
+                                                     │ - background: 能力代理/录制 │
+                                                     │ - content: 页面注入/采集    │
+                                                     │ - popup: 人工步骤面板        │
+                                                     └───────────────────────────┘
 ```
 
-- **AI 编辑器**：通过内置 MCP 客户端直连浏览器服务，发起验证任务。
-- **浏览器 MCP 服务器**：对下与插件通信，对上暴露浏览器工具（导航、点击、截图、收集日志、Mock 触发等）。
-- **浏览器插件**：注入业务页面，捕获 `[AI-TRACE]` 日志、拦截网络请求、引导人工操作、提供异常标记面板。
-- **Tauri GUI**：独立桌面应用，被动接收日志与网络请求，持久化到 SQLite，提供可视化回溯。
+说明：
 
-## 4. 核心功能模块
+- **本地服务**不再是 Node MCP Server，而是 **Rust bridge 融合到 GUI**：GUI 启动后内嵌 WS/MCP/SQLite/压缩器，减少进程与日志分散
+- 插件侧以 **popup-first** 作为人工操作入口；DevTools panel 为后续增强
 
-### 4.1 AI 代码植入（Skills）
-- AI 生成代码时强制注入：
-  - **统一日志**：`[AI-TRACE][模块] <动作> : <数据>`
-  - **断言**：`[AI-ASSERT] <条件> : passed/failed`
-  - **可选 Mock 钩子**：`window.__mock__.xxx()`
+### 3.2 仓库落点映射
 
-### 4.2 操作指令生成
-- AI 分析代码变更，生成结构化步骤指令（JSON），包含：
-  - 步骤类型（navigate / input / click / observe / mock_trigger）
-  - 目标选择器、输入值、预期效果描述
-  - 可用的 Mock 动作（用于跳过耗时等待）
+- 插件（WXT）：`apps/plugin`
+- GUI（Tauri）：`apps/gui`
+- bridge（Rust）：`crates/rust-bridge`（逐步融合进 GUI）
+- 协议（TS）：`packages/protocol-ts`
+- 前端日志打桩：`packages/logger-ts`（`@wujie/logger-ts`）
+- Skills：
+  - `.trae/skills/ai-instrumentation`
+  - `.trae/skills/ai-human-verify-loop`
 
-### 4.3 人工操作界面（插件面板）
-- 侧边栏展示任务步骤，高亮当前步骤。
-- 每步提供 **“异常”** 快捷按钮（点击无反应、结果错误、找不到元素等）。
-- **Mock 控制区**：一键触发 AI 注入的状态模拟。
-- **操作完毕** 按钮：提交日志和截图给 AI 进行 Review。
+## 4. 关键模块设计
 
-### 4.4 AI Review 与自我修复
-- 接收结构化日志 + 操作结果 + 异常标记。
-- 自动检查断言、对比预期行为、定位问题代码。
-- 生成代码修复（unified diff），直接改写工作区文件。
-- 若需重试，通知操作者重跑指定步骤。
+### 4.1 日志/断言打桩（ai-instrumentation + @wujie/logger-ts）
 
-### 4.5 异步验证与遗留问题
-- 耗时或依赖外部状态的步骤，操作者可 **“挂起”** 任务，生成遗留问题记录。
-- 支持事后恢复执行或 AI 异步 Review。
-- Mock 优先策略：AI 自动注入 Mock 消除等待；Mock 不可行时才转为异步。
+- 打桩库：`@wujie/logger-ts` 提供 `aiTrace / aiAssert / aiManualFeedback`
+- 打桩粒度（默认关键路径）：
+  - 组件初始化（加载开始/结束）
+  - 提交接口（请求发起/成功/失败）
+  - 读取状态（storage/query/bridge）
+  - 状态回显（UI 结果/禁用态/toast）
+- 约定：
+  - `traceId` 必须贯穿；前后端请求头携带 `traceId`
+  - `taskId/stepId` 由验证任务系统生成并注入（logger 不自动生成 stepId）
 
-### 4.6 本地回溯（Tauri GUI）
-- 接收插件 fire-and-forget 发送的日志和网络请求数据。
-- SQLite 存储，按任务、时间、模块索引。
-- 提供时间线视图、请求详情、日志过滤与导出功能。
+### 4.2 人工验证闭环（ai-human-verify-loop）
 
-## 5. MCP 工具定义（浏览器 MCP 服务器暴露）
+- AI 输出结构化 steps（带 stepId），通过 MCP 推送给插件面板
+- 人工面板提供：
+  - 步骤列表（待执行/进行中/完成/异常/挂起）
+  - 异常快捷上报（click_no_response / element_not_found / wrong_result / network_error / timeout）
+  - 完成提交（附带必要证据）
+
+### 4.3 证据采集与回放
+
+- 采集源：
+  - `aiTrace/aiAssert/aiManualFeedback`（业务/插件/GUI 统一入口）
+  - console error / network recording（插件 background）
+  - screenshot（插件或 GUI）
+- 落库：
+  - SQLite 作为本地证据库
+  - 主索引：`taskId + stepId + traceId`
+
+### 4.4 证据包压缩（token 控制）
+
+压缩等级：
+
+- `summary`（默认）：失败步骤、断言统计、关键发现、人工备注
+- `detail`：失败步骤前后关键日志 + 相关 network/console + 截图引用
+- `full`：完整事件流（仅在 AI 主动拉取时使用）
+
+## 5. MCP 工具（任务级）
+
+优先定义“验证任务级工具”，避免暴露大量原子 click API：
 
 | 工具名称 | 功能 |
 |---------|------|
-| `browser_navigate` | 导航到指定 URL |
-| `browser_click` | 点击页面元素（由操作者执行或自动） |
-| `browser_input` | 输入文本 |
-| `browser_screenshot` | 获取当前页面截图 |
-| `browser_collect_logs` | 收集期间内所有 AI 标记日志 |
-| `browser_collect_network` | 收集网络请求记录 |
-| `browser_trigger_mock` | 触发页面注入的 Mock 动作 |
-| `browser_report_exception` | 提交操作者标记的异常（含类型与自动捕获的环境数据） |
-| `request_human_action` | 向插件面板发送人工操作指令，等待确认 |
+| `validation_create_task` | 创建验证任务（taskId/traceId/title） |
+| `validation_push_steps` | 推送步骤（steps） |
+| `validation_request_human_action` | 通知插件面板开始执行某任务 |
+| `validation_submit_human_feedback` | 提交人工反馈（含异常类型/备注） |
+| `validation_collect_trace_bundle` | 拉取证据包（summary/detail/full） |
+| `validation_mark_suspend` | 挂起任务并持久化状态 |
 
-## 6. 工作流示例
+## 6. 闭环流程（推荐）
 
-1. 开发者提交需求，AI 在编辑器中生成代码（已含日志/断言/Mock）。
-2. AI 通过 MCP 调用 `request_human_action` 推送操作指令到插件面板。
-3. 操作者按面板指引操作，必要时点击 Mock 按钮跳过等待。
-4. 操作完毕后，插件上报日志和截图。
-5. AI 调用自身 Review 能力，自动分析日志，输出通过/失败结论。
-6. 若失败，AI 直接修复代码，并通知操作者重试某步骤。
-7. 所有日志和网络请求在操作过程中被旁路发送至 Tauri GUI，用于事后回溯。
+1. 用户在 Trae 提交需求，AI 生成/修改代码
+2. 调用 `ai-instrumentation`：在关键点位插入 `@wujie/logger-ts` 打桩
+3. AI 判断需要页面验证，调用 `validation_create_task` + `validation_push_steps`
+4. AI 调用 `validation_request_human_action` 推送步骤给插件面板
+5. 人工按步骤操作，遇到异常用快捷按钮上报；完成后提交反馈
+6. AI 拉取 `validation_collect_trace_bundle(level=summary)`，判定通过/失败
+7. 若失败：AI 输出 unified diff 修复；必要时仅重跑失败步骤
+8. 若断连/超时/证据不足：进入兜底（挂起/重试/二次拉取 detail/full）
 
-## 7. 技术选型
+## 7. 技术选型（按当前仓库）
 
-| 组件 | 推荐技术 |
-|------|---------|
-| AI 编辑器 | VS Code + GitHub Copilot (Agent 模式) / Cursor |
-| 浏览器插件 | Plasmo + React |
-| 浏览器 MCP 服务器 | Node.js + `@modelcontextprotocol/sdk` |
-| 与插件通信 | Native Messaging 或 local WebSocket |
-| AI 模型 | 复用开发者已有的 API Key（支持 OpenAI / DeepSeek / 私有模型） |
-| 回溯 GUI | Tauri (Rust 后端 + React 前端) |
-| 存储 | SQLite (rusqlite) |
+| 组件 | 技术 |
+|------|------|
+| 插件 | WXT + React 18 + Ant Design |
+| 本地服务（MCP/WS/压缩/存储） | Rust（tokio）+ SQLite |
+| GUI | Tauri（Rust 后端 + React 前端） |
+| 结构化日志打桩 | `@wujie/logger-ts` |
+| Skills | `ai-instrumentation` / `ai-human-verify-loop` |
 
-## 8. 部署与运行要求
+## 8. 运行形态与安全
 
-- **开发人员**：安装浏览器插件、运行本地 MCP 服务器（与插件配对）、配置 AI 编辑器 MCP 连接、可选启动 Tauri 回溯 GUI。
-- **网络**：所有交互均在本地环回地址（127.0.0.1），无外部流量。
-- **安全**：日志脱敏，Mock 仅限开发环境，生产构建自动剔除所有注入代码。
+- 运行形态（目标）：只启动 GUI（内嵌 bridge）+ 插件；Trae 通过 MCP 连接 GUI
+- 网络：所有交互走本地（127.0.0.1）
+- 安全：
+  - 日志脱敏；默认 summary 回传，避免泄露大字段
+  - 打桩与 mock 仅在开发环境开启（logger 具备 enabled/level 开关）
 
-## 9. 迭代规划
+## 9. 迭代规划（与落地顺序绑定）
 
 | 阶段 | 内容 |
 |------|------|
-| **MVP** | 浏览器插件 + 本地 MCP 服务器 + AI 编辑器连接；实现基本操作引导、日志收集、AI Review |
-| **v1.0** | 增加异常标记面板、Mock 注入、异步挂起/恢复 |
-| **v1.5** | 加入 Tauri GUI 回溯端，持久化日志与网络请求 |
-| **v2.0** | 集成 CI/CD，支持团队共享，知识库沉淀 |
+| MVP-1 | logger-ts + ai-instrumentation 打桩规范落地；traceId 贯通 |
+| MVP-2 | ai-human-verify-loop：steps 推送/人工反馈/证据采集；summary 压缩 |
+| MVP-3 | GUI 吸收 rust-bridge：统一 MCP/WS/SQLite；任务回放 UI |
+| MVP-4 | detail/full 证据包、devtools panel、可选 OTel exporter |
 
 ---
 
-本方案利用 MCP 标准解耦 AI 与工具，保持核心闭环高效简洁，同时为长期演进留足扩展空间。
+本方案以“任务级工具 + 结构化证据 + token 可控压缩”为核心，把人工验证变成可重复、可回放、可被 AI 消化的输入，从而形成稳定的自我反馈闭环。
