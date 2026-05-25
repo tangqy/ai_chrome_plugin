@@ -38,7 +38,7 @@ impl LogStore {
     }
 
     pub fn insert(&self, event: &LogEventItem) -> anyhow::Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.execute(
             "INSERT INTO log_events (id, trace_id, task_id, step_id, source, module, kind, level, action, message, ts, attrs)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
@@ -61,7 +61,7 @@ impl LogStore {
     }
 
     pub fn query_by_task_id(&self, task_id: &str, limit: usize) -> Vec<LogEventItem> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = match conn.prepare(
             "SELECT id, trace_id, task_id, step_id, source, module, kind, level, action, message, ts, attrs
              FROM log_events WHERE task_id = ?1 ORDER BY ts ASC LIMIT ?2",
@@ -91,8 +91,77 @@ impl LogStore {
         }
     }
 
+    pub fn query(
+        &self,
+        task_id: Option<&str>,
+        trace_id: Option<&str>,
+        level: Option<&str>,
+        limit: usize,
+    ) -> Vec<LogEventItem> {
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut conditions = Vec::new();
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if let Some(tid) = task_id {
+            conditions.push(format!("task_id = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(tid.to_string()));
+        }
+        if let Some(tid) = trace_id {
+            conditions.push(format!("trace_id = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(tid.to_string()));
+        }
+        if let Some(lvl) = level {
+            conditions.push(format!("level = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(lvl.to_string()));
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", conditions.join(" AND "))
+        };
+        let limit_idx = param_values.len() + 1;
+        let sql = format!(
+            "SELECT id, trace_id, task_id, step_id, source, module, kind, level, action, message, ts, attrs
+             FROM log_events {} ORDER BY ts DESC LIMIT ?{}",
+            where_clause, limit_idx
+        );
+
+        let mut stmt = match conn.prepare(&sql) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> = param_values
+            .iter()
+            .map(|p| p.as_ref())
+            .chain(std::iter::once(&limit as &dyn rusqlite::types::ToSql))
+            .collect();
+
+        let rows = stmt.query_map(params_refs.as_slice(), |row| {
+            Ok(LogEventItem {
+                id: row.get(0)?,
+                trace_id: row.get(1)?,
+                task_id: row.get(2)?,
+                step_id: row.get(3)?,
+                source: row.get(4)?,
+                module: row.get(5)?,
+                kind: row.get(6)?,
+                level: row.get(7)?,
+                action: row.get(8)?,
+                message: row.get(9)?,
+                ts: row.get::<_, i64>(10)? as u64,
+                attrs: row.get(11)?,
+            })
+        });
+        match rows {
+            Ok(r) => r.filter_map(|v| v.ok()).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
     pub fn cleanup_old(&self, days: u32) -> anyhow::Result<usize> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let cutoff = (now_ms() / 1000) as i64 - (days as i64 * 86400);
         let cutoff_ms = cutoff * 1000;
         let count = conn.execute(

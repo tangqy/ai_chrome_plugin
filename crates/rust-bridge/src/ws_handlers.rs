@@ -497,18 +497,20 @@ async fn handle_ws_json(
             .to_string();
 
         let feedback = get_feedback(human_feedback, &task_id).await;
-        let guard = errors.lock().await;
-        let recent_errors = guard
-            .iter()
-            .rev()
-            .take(10)
-            .map(|e| rust_shared::protocol::ConsoleErrorItem {
-                message: e.message.clone(),
-                url: e.url.clone(),
-                tab_id: e.tab_id,
-                ts: e.ts,
-            })
-            .collect::<Vec<_>>();
+        let recent_errors = {
+            let guard = errors.lock().await;
+            guard
+                .iter()
+                .rev()
+                .take(10)
+                .map(|e| rust_shared::protocol::ConsoleErrorItem {
+                    message: e.message.clone(),
+                    url: e.url.clone(),
+                    tab_id: e.tab_id,
+                    ts: e.ts,
+                })
+                .collect::<Vec<_>>()
+        };
 
         let summary = rust_shared::protocol::TraceBundleSummary {
             task_id: task_id.clone(),
@@ -547,23 +549,165 @@ async fn handle_ws_json(
 
     if typ == "log_event" {
         let payload = value.get("payload").cloned().unwrap_or_default();
+        let id = payload
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let trace_id = payload
+            .get("traceId")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        if id.is_empty() || trace_id.is_empty() {
+            eprintln!("log_event missing id or traceId, skipping");
+            return Ok(());
+        }
         let event = rust_shared::protocol::LogEventItem {
-            id: payload.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            trace_id: payload.get("traceId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            task_id: payload.get("taskId").and_then(|v| v.as_str()).map(String::from),
-            step_id: payload.get("stepId").and_then(|v| v.as_str()).map(String::from),
-            source: payload.get("source").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
-            module: payload.get("module").and_then(|v| v.as_str()).unwrap_or("app").to_string(),
-            kind: payload.get("kind").and_then(|v| v.as_str()).unwrap_or("custom").to_string(),
-            level: payload.get("level").and_then(|v| v.as_str()).unwrap_or("info").to_string(),
-            action: payload.get("action").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            message: payload.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            ts: payload.get("ts").and_then(|v| v.as_u64()).unwrap_or_else(now_ms),
-            attrs: payload.get("attrs").and_then(|v| serde_json::to_string(v).ok()),
+            id,
+            trace_id,
+            task_id: payload
+                .get("taskId")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            step_id: payload
+                .get("stepId")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            source: payload
+                .get("source")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string(),
+            module: payload
+                .get("module")
+                .and_then(|v| v.as_str())
+                .unwrap_or("app")
+                .to_string(),
+            kind: payload
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .unwrap_or("custom")
+                .to_string(),
+            level: payload
+                .get("level")
+                .and_then(|v| v.as_str())
+                .unwrap_or("info")
+                .to_string(),
+            action: payload
+                .get("action")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            message: payload
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            ts: payload
+                .get("ts")
+                .and_then(|v| v.as_u64())
+                .unwrap_or_else(now_ms),
+            attrs: payload
+                .get("attrs")
+                .and_then(|v| serde_json::to_string(v).ok()),
         };
         if let Err(e) = log_store.insert(&event) {
             eprintln!("Failed to insert log event: {e}");
         }
+        return Ok(());
+    }
+
+    if typ == "log_write" {
+        let event_payload = value
+            .get("payload")
+            .and_then(|v| v.get("event"))
+            .cloned()
+            .unwrap_or_default();
+        let event = rust_shared::protocol::LogEventItem {
+            id: event_payload
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            trace_id: event_payload
+                .get("traceId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            task_id: event_payload
+                .get("taskId")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            step_id: event_payload
+                .get("stepId")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            source: event_payload
+                .get("source")
+                .and_then(|v| v.as_str())
+                .unwrap_or("ai")
+                .to_string(),
+            module: event_payload
+                .get("module")
+                .and_then(|v| v.as_str())
+                .unwrap_or("app")
+                .to_string(),
+            kind: event_payload
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .unwrap_or("ai_trace")
+                .to_string(),
+            level: event_payload
+                .get("level")
+                .and_then(|v| v.as_str())
+                .unwrap_or("info")
+                .to_string(),
+            action: event_payload
+                .get("action")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            message: event_payload
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            ts: event_payload
+                .get("ts")
+                .and_then(|v| v.as_u64())
+                .unwrap_or_else(now_ms),
+            attrs: event_payload
+                .get("attrs")
+                .and_then(|v| serde_json::to_string(v).ok()),
+        };
+        let ok = log_store.insert(&event).is_ok();
+        let resp = serde_json::json!({
+            "type": "log_write_result",
+            "requestId": request_id,
+            "ok": ok
+        });
+        write.send(Message::Text(resp.to_string())).await?;
+        return Ok(());
+    }
+
+    if typ == "log_query" {
+        let payload = value.get("payload").cloned().unwrap_or_default();
+        let task_id = payload.get("taskId").and_then(|v| v.as_str());
+        let trace_id = payload.get("traceId").and_then(|v| v.as_str());
+        let level = payload.get("level").and_then(|v| v.as_str());
+        let limit = payload
+            .get("limit")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(50)
+            .min(200) as usize;
+        let events = log_store.query(task_id, trace_id, level, limit);
+        let resp = serde_json::json!({
+            "type": "log_query_result",
+            "requestId": request_id,
+            "events": events
+        });
+        write.send(Message::Text(resp.to_string())).await?;
         return Ok(());
     }
 

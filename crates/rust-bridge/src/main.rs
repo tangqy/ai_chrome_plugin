@@ -38,10 +38,7 @@ async fn main() -> anyhow::Result<()> {
         Vec<rust_shared::protocol::HumanFeedbackItem>,
     >::new()));
     let log_store: SharedLogStore = Arc::new(
-        log_store::LogStore::new().unwrap_or_else(|e| {
-            eprintln!("Failed to open log database: {e}, continuing without persistence");
-            panic!("log_store init failed")
-        }),
+        log_store::LogStore::new().expect("Failed to open log database (~/.wujie/wujie_bridge.db)")
     );
 
     let ws_errors = errors.clone();
@@ -65,6 +62,22 @@ async fn main() -> anyhow::Result<()> {
         .await
         {
             eprintln!("ws server error: {err}");
+        }
+    });
+
+    let cleanup_store = log_store.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            match cleanup_store.cleanup_old(7) {
+                Ok(count) => {
+                    if count > 0 {
+                        eprintln!("[bridge] cleaned up {count} old log events");
+                    }
+                }
+                Err(e) => eprintln!("[bridge] log cleanup failed: {e}"),
+            }
         }
     });
 
