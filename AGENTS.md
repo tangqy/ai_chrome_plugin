@@ -10,7 +10,8 @@
 
 - 插件前端：React 18 + Ant Design 6 + WXT + Vite 8
 - 桥接服务：Rust（tokio + tokio-tungstenite）
-- 工程管理：pnpm workspace（`apps/*`、`packages/*`）+ Cargo workspace（`crates/*`）
+- GUI 客户端：Tauri 2 + React 18 + Ant Design 6 + Vite 6
+- 工程管理：pnpm workspace（`apps/*`、`packages/*`）+ Cargo workspace（`crates/*`、`apps/gui/src-tauri`）
 - 包管理器版本：`pnpm@9.12.3`（锁定于 `packageManager` 字段）
 
 ## 目录结构
@@ -18,6 +19,7 @@
 | 路径 | 类型 | 说明 |
 |---|---|---|
 | `apps/plugin/` | WXT Chrome 扩展 | 插件前端入口，使用 `wxt` 命令 |
+| `apps/gui/` | Tauri 2 桌面应用 | GUI 客户端，集成 Bridge 管理和日志查看 |
 | `packages/protocol-ts/` | TS 库 | 协议类型定义，输出 `dist/index.d.ts` |
 | `crates/rust-bridge/` | Rust 二进制 | WebSocket + MCP stdio 桥接服务 |
 | `crates/rust-shared/` | Rust lib | 被 bridge 依赖的共享协议和逻辑 |
@@ -49,6 +51,12 @@ pnpm -r lint
 pnpm --filter @wujie/plugin build
 pnpm --filter @wujie/plugin zip
 pnpm --filter @wujie/protocol-ts build
+
+# 启动 GUI 桌面应用（开发模式）
+pnpm --filter @wujie/gui tauri dev
+
+# 构建 GUI 发行版
+pnpm --filter @wujie/gui tauri build
 
 # 打包发行版（输出到 ./out/）
 node scripts/package-all.mjs
