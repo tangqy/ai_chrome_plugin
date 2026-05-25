@@ -37,13 +37,15 @@ export const RuntimeMessageTypes = {
   humanVerifyPromptGet: 'HUMAN_VERIFY_PROMPT_GET',
   humanVerifyPromptPush: 'HUMAN_VERIFY_PROMPT_PUSH',
   humanVerifyFeedbackSubmit: 'HUMAN_VERIFY_FEEDBACK_SUBMIT',
+  humanVerifyCompleted: 'HUMAN_VERIFY_COMPLETED',
 } as const;
 
 export type RuntimeMessage =
   | { type: typeof RuntimeMessageTypes.humanVerifyPromptSet; payload: { task: HumanVerifyTask | null } }
   | { type: typeof RuntimeMessageTypes.humanVerifyPromptGet }
   | { type: typeof RuntimeMessageTypes.humanVerifyPromptPush; payload: HumanVerifyTask | null }
-  | { type: typeof RuntimeMessageTypes.humanVerifyFeedbackSubmit; payload: HumanFeedback };
+  | { type: typeof RuntimeMessageTypes.humanVerifyFeedbackSubmit; payload: HumanFeedback }
+  | { type: typeof RuntimeMessageTypes.humanVerifyCompleted; payload: { taskId: string; traceId: string; status: 'completed' | 'suspended' } };
 
 export function isHumanVerifyTask(input: unknown): input is HumanVerifyTask {
   const v = input as any;

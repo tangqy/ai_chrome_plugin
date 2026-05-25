@@ -1,6 +1,6 @@
 ---
 name: "ai-human-verify-loop"
-description: "生成“人工页面验证闭环”：AI 产出可执行 steps，经 MCP 通知人工操作并收集反馈与证据包（trace/assert/network/screenshot）。当实现需要页面手动验证或需要自反馈闭环时调用。"
+description: "生成人工页面验证闭环：AI 产出可执行 steps，经 MCP 通知人工操作并收集反馈与证据包（trace/assert/network/screenshot）。当实现需要页面手动验证或需要自反馈闭环时调用。"
 ---
 
 # 人工验证闭环（ai-human-verify-loop）
@@ -9,7 +9,7 @@ description: "生成“人工页面验证闭环”：AI 产出可执行 steps，
 
 在 Trae 内形成自我反馈闭环：
 
-1) AI 写完代码 → 2) 生成可执行操作步骤（steps）→ 3) 通过 MCP 推送给人工 → 4) 人工只执行与反馈 → 5) AI 根据证据包判定通过/失败并继续修复或重试。
+AI 写完代码 → 生成可执行操作步骤 → 通过 MCP 推送给人工 → **阻塞等待人工完成** → 自动收集 trace bundle → AI 根据证据包判定通过/失败并继续修复或重试。
 
 ## 适用场景（触发条件）
 
@@ -17,15 +17,81 @@ description: "生成“人工页面验证闭环”：AI 产出可执行 steps，
 - 自动化不可靠或不希望引入全自动浏览器控制
 - 需要将人工观察结果结构化回传给 AI
 
-## 输出要求
+## 调用方式（一次调用，自动闭环）
 
-- 默认输出 unified diff（协议/消息定义、调用点、最小 UI 支持）
-- token 压缩：默认只向 AI 回传摘要证据包（summary），必要时再拉 detail/full
-- 异常兜底：断连/超时/证据不足/人工挂起都要有明确状态与返回结构
+AI 只需调用一次 `validation_request_human_action`，该工具会：
 
-## 数据结构（必须）
+1. 将任务推送到插件 SidePanel
+2. **阻塞等待**人工操作完成（最长 5 分钟）
+3. 人工点击"验证完毕"后，自动收集 trace bundle
+4. 返回完整的验证结果
 
-### 1) ValidationTask
+### 输入
+
+```json
+{
+  "task": {
+    "task_id": "vt_xxx",
+    "trace_id": "tr_xxx",
+    "title": "验证 XXX 功能",
+    "steps": [
+      { "step_id": "s1", "typ": "observe", "instruction": "查看页面标题", "expected": "标题正常显示" },
+      { "step_id": "s2", "typ": "click", "instruction": "点击提交按钮", "expected": "提交成功" }
+    ]
+  }
+}
+```
+
+### 返回结构
+
+```json
+{
+  "status": "completed",
+  "task_id": "vt_xxx",
+  "trace_id": "tr_xxx",
+  "bundle": {
+    "task_id": "vt_xxx",
+    "ts": 1779713490802,
+    "feedback": [
+      { "step_id": "s1", "result": "passed", "comment": null, "ts": 1779713434128 },
+      { "step_id": "s2", "result": "failed", "exception_type": "click_no_response", "comment": "点击无反应", "ts": 1779713435227 }
+    ],
+    "console_errors": [
+      { "message": "TypeError: ...", "url": "https://...", "tab_id": 123, "ts": 1779713430000 }
+    ]
+  }
+}
+```
+
+### 可能的 status 值
+
+| status | 含义 |
+|---|---|
+| `completed` | 人工正常完成所有步骤 |
+| `suspended` | 人工点击了"挂起"（耗时较长） |
+| `timeout` | 5 分钟超时，人工未完成 |
+
+## AI 拿到结果后必须做的事
+
+1. **检查 status**：
+   - `completed` → 分析 feedback
+   - `suspended` → 询问用户是否继续，可再次调用同 task_id
+   - `timeout` → 提示用户超时，可用 `validation_collect_trace_bundle` 手动收集已有结果
+
+2. **分析 feedback**：统计 passed/failed/suspended/blocked 数量
+
+3. **分析 console_errors**：是否有与本次变更相关的错误
+
+4. **判定**：
+   - 全部 passed → 验证通过，向用户报告成功
+   - 有 failed → 定位失败步骤，分析原因（结合 console_errors），提出修复方案
+   - 有 suspended → 询问用户是否继续验证
+
+5. **输出结论**：向用户展示结构化的验证报告
+
+## 数据结构
+
+### ValidationTask
 
 ```ts
 type ValidationTask = {
@@ -36,7 +102,7 @@ type ValidationTask = {
 }
 ```
 
-### 2) ValidationStep
+### ValidationStep
 
 ```ts
 type ValidationStep = {
@@ -49,7 +115,7 @@ type ValidationStep = {
 }
 ```
 
-### 3) HumanFeedback
+### HumanFeedback
 
 ```ts
 type HumanFeedback = {
@@ -67,46 +133,16 @@ type HumanFeedback = {
 }
 ```
 
-## MCP 工具契约（建议）
+## MCP 工具
 
-最小工具集（优先任务级工具，不要直接暴露一堆原子 click API）：
+| 工具名 | 说明 |
+|---|---|
+| `validation_request_human_action` | 推送任务并阻塞等待结果（主入口） |
+| `validation_collect_trace_bundle` | 手动收集某个 task 的已有反馈（兜底用） |
 
-- `validation_create_task`
-- `validation_push_steps`
-- `validation_request_human_action`
-- `validation_submit_human_feedback`
-- `validation_collect_trace_bundle`
-- `validation_mark_suspend`
+## 异常兜底
 
-## 证据包压缩（必须）
-
-默认返回 summary：
-
-```json
-{
-  "taskId": "vt_xxx",
-  "traceId": "tr_xxx",
-  "status": "failed",
-  "failedSteps": ["s2"],
-  "assertSummary": { "passed": 3, "failed": 1 },
-  "manualFeedback": [{ "stepId": "s2", "exceptionType": "click_no_response", "comment": "点击无反应" }],
-  "keyFindings": ["console_error: ...", "no network request observed"]
-}
-```
-
-当 AI 判断证据不足时，再请求 `detail/full`。
-
-## 异常兜底（必须）
-
-- 插件断连：任务进入 `blocked`，返回可重试提示
-- 任务超时：自动 `suspended`，保留当前证据
-- 证据不足：返回 `need_more_evidence: true` 并指明需要的证据类型
-
-## 执行步骤（你应如何工作）
-
-1. 从用户需求与代码变更推导最少 steps（可执行、可观察）
-2. steps 必须包含 `stepId`，并在日志/断言 ctx 中带上 `{ taskId, stepId, traceId }`
-3. 通过 MCP 把 steps 推给人工（插件面板）
-4. 收集人工反馈 + 关键证据（assert/console/network/screenshot）
-5. 压缩成 summary 返给 AI；必要时再拉 detail/full
-
+- **超时**：5 分钟未完成自动返回 `{ status: "timeout" }`，AI 可用 `validation_collect_trace_bundle` 收集已有结果
+- **挂起**：人工点击"挂起"返回 `{ status: "suspended" }`，AI 应询问用户是否继续
+- **插件断连**：WS 错误导致 reject，AI 应提示用户检查插件和 Bridge 连接
+- **console_errors 相关性**：AI 应判断错误是否与当前验证页面相关，过滤无关错误

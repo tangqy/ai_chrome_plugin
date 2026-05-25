@@ -1,8 +1,8 @@
-use futures_util::{SinkExt, StreamExt};
 use futures_util::stream::SplitSink;
+use futures_util::{SinkExt, StreamExt};
 use similar::TextDiff;
 use std::sync::Arc;
-use tokio::fs::{OpenOptions, create_dir_all};
+use tokio::fs::{create_dir_all, OpenOptions};
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::broadcast::Sender;
@@ -10,8 +10,10 @@ use tokio::sync::Mutex;
 use tokio::time::{interval, Duration};
 use tokio_tungstenite::{accept_async, tungstenite::Message, WebSocketStream};
 
-use crate::session::{ConsoleErrorEvent, SessionInfo, SharedErrors, SharedPrintHash, SharedSessions};
-use crate::validation::{push_feedback, SharedHumanFeedback};
+use crate::session::{
+    ConsoleErrorEvent, SessionInfo, SharedErrors, SharedPrintHash, SharedSessions,
+};
+use crate::validation::{get_feedback, push_feedback, SharedHumanFeedback};
 use crate::LogTarget;
 
 type SharedLogTarget = Arc<Mutex<LogTarget>>;
@@ -36,17 +38,16 @@ pub async fn run_ws_server(
         let ws_broadcast = ws_broadcast.clone();
         let human_feedback = human_feedback.clone();
         tokio::spawn(async move {
-            if let Err(err) =
-                handle_ws_connection(
-                    stream,
-                    errors,
-                    sessions,
-                    last_print_hash,
-                    log_target,
-                    ws_broadcast,
-                    human_feedback,
-                )
-                .await
+            if let Err(err) = handle_ws_connection(
+                stream,
+                errors,
+                sessions,
+                last_print_hash,
+                log_target,
+                ws_broadcast,
+                human_feedback,
+            )
+            .await
             {
                 eprintln!("ws connection error: {err}");
             }
@@ -126,7 +127,10 @@ async fn handle_ws_json(
     human_feedback: &SharedHumanFeedback,
     ws_broadcast: &WsBroadcast,
 ) -> anyhow::Result<()> {
-    let typ = value.get("type").and_then(|v| v.as_str()).unwrap_or_default();
+    let typ = value
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
     let request_id = value
         .get("requestId")
         .and_then(|v| v.as_str())
@@ -156,8 +160,14 @@ async fn handle_ws_json(
             .and_then(|v| v.as_str())
             .unwrap_or("unknown error")
             .to_string();
-        let url = payload.get("url").and_then(|v| v.as_str()).map(ToString::to_string);
-        let tab_id = payload.get("tabId").and_then(|v| v.as_i64()).map(|v| v as i32);
+        let url = payload
+            .get("url")
+            .and_then(|v| v.as_str())
+            .map(ToString::to_string);
+        let tab_id = payload
+            .get("tabId")
+            .and_then(|v| v.as_i64())
+            .map(|v| v as i32);
         let event = ConsoleErrorEvent {
             message,
             url: url.clone(),
@@ -210,10 +220,7 @@ async fn handle_ws_json(
             .get("method")
             .and_then(|v| v.as_str())
             .unwrap_or("GET");
-        let url = payload
-            .get("url")
-            .and_then(|v| v.as_str())
-            .unwrap_or("-");
+        let url = payload.get("url").and_then(|v| v.as_str()).unwrap_or("-");
         let resource_type = payload
             .get("resourceType")
             .and_then(|v| v.as_str())
@@ -258,8 +265,15 @@ async fn handle_ws_json(
 
     if typ == "page_context" {
         let payload = value.get("payload").cloned().unwrap_or_default();
-        let tab_id = payload.get("tabId").and_then(|v| v.as_i64()).map(|v| v as i32);
-        let url = payload.get("url").and_then(|v| v.as_str()).unwrap_or("-").to_string();
+        let tab_id = payload
+            .get("tabId")
+            .and_then(|v| v.as_i64())
+            .map(|v| v as i32);
+        let url = payload
+            .get("url")
+            .and_then(|v| v.as_str())
+            .unwrap_or("-")
+            .to_string();
         if let Some(tab_id_value) = tab_id {
             let mut sessions_guard = sessions.lock().await;
             let entry = sessions_guard.entry(tab_id_value).or_insert(SessionInfo {
@@ -276,9 +290,21 @@ async fn handle_ws_json(
 
     if typ == "validation_human_feedback" {
         let payload = value.get("payload").cloned().unwrap_or_default();
-        let task_id = payload.get("taskId").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let trace_id = payload.get("traceId").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let step_id = payload.get("stepId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let task_id = payload
+            .get("taskId")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let trace_id = payload
+            .get("traceId")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let step_id = payload
+            .get("stepId")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         if task_id.is_empty() || trace_id.is_empty() || step_id.is_empty() {
             return Ok(());
         }
@@ -286,10 +312,23 @@ async fn handle_ws_json(
             task_id,
             trace_id,
             step_id,
-            result: payload.get("result").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
-            exception_type: payload.get("exceptionType").and_then(|v| v.as_str()).map(ToString::to_string),
-            comment: payload.get("comment").and_then(|v| v.as_str()).map(ToString::to_string),
-            ts: payload.get("ts").and_then(|v| v.as_u64()).unwrap_or_else(now_ms),
+            result: payload
+                .get("result")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string(),
+            exception_type: payload
+                .get("exceptionType")
+                .and_then(|v| v.as_str())
+                .map(ToString::to_string),
+            comment: payload
+                .get("comment")
+                .and_then(|v| v.as_str())
+                .map(ToString::to_string),
+            ts: payload
+                .get("ts")
+                .and_then(|v| v.as_u64())
+                .unwrap_or_else(now_ms),
         };
         push_feedback(human_feedback, feedback).await;
         return Ok(());
@@ -319,8 +358,13 @@ async fn handle_ws_json(
             .to_string();
             write_line(log_target, &summary, None, ts).await;
             for item in guard.iter().rev().take(5) {
-                write_line(log_target, &format_console_line(item), item.url.as_deref(), item.ts)
-                    .await;
+                write_line(
+                    log_target,
+                    &format_console_line(item),
+                    item.url.as_deref(),
+                    item.ts,
+                )
+                .await;
             }
             *print_guard = hash;
         }
@@ -335,7 +379,11 @@ async fn handle_ws_json(
     }
 
     if typ == "format_json" {
-        let input = value.get("payload").and_then(|p| p.get("input")).and_then(|v| v.as_str()).unwrap_or("");
+        let input = value
+            .get("payload")
+            .and_then(|p| p.get("input"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let resp = match serde_json::from_str::<serde_json::Value>(input) {
             Ok(v) => serde_json::json!({
                 "type": "format_json_result",
@@ -355,9 +403,20 @@ async fn handle_ws_json(
     }
 
     if typ == "diff_text" {
-        let left = value.get("payload").and_then(|p| p.get("left")).and_then(|v| v.as_str()).unwrap_or("");
-        let right = value.get("payload").and_then(|p| p.get("right")).and_then(|v| v.as_str()).unwrap_or("");
-        let diff = TextDiff::from_lines(left, right).unified_diff().header("left", "right").to_string();
+        let left = value
+            .get("payload")
+            .and_then(|p| p.get("left"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let right = value
+            .get("payload")
+            .and_then(|p| p.get("right"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let diff = TextDiff::from_lines(left, right)
+            .unified_diff()
+            .header("left", "right")
+            .to_string();
         let resp = serde_json::json!({
             "type": "diff_text_result",
             "requestId": request_id,
@@ -406,15 +465,75 @@ async fn handle_ws_json(
     }
 
     if typ == "validation_request_human_action" {
-        if let Some(payload) = value.get("payload") {
-            let msg = serde_json::json!({
-                "type": "validation_request_human_action",
-                "ts": now_ms(),
-                "payload": payload
-            })
+        let msg = serde_json::json!({
+            "type": "validation_request_human_action",
+            "ts": now_ms(),
+            "payload": value.get("payload").cloned().unwrap_or_default()
+        })
+        .to_string();
+        let _ = ws_broadcast.send(msg);
+        let resp = serde_json::json!({
+            "type": "validation_request_human_action_result",
+            "requestId": request_id,
+            "ok": true
+        });
+        write.send(Message::Text(resp.to_string())).await?;
+        return Ok(());
+    }
+
+    if typ == "validation_collect_trace_bundle" {
+        let payload = value.get("payload").cloned().unwrap_or_default();
+        let task_id = payload
+            .get("taskId")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
             .to_string();
-            let _ = ws_broadcast.send(msg);
-        }
+
+        let feedback = get_feedback(human_feedback, &task_id).await;
+        let guard = errors.lock().await;
+        let recent_errors = guard
+            .iter()
+            .rev()
+            .take(10)
+            .map(|e| rust_shared::protocol::ConsoleErrorItem {
+                message: e.message.clone(),
+                url: e.url.clone(),
+                tab_id: e.tab_id,
+                ts: e.ts,
+            })
+            .collect::<Vec<_>>();
+
+        let summary = rust_shared::protocol::TraceBundleSummary {
+            task_id: task_id.clone(),
+            ts: now_ms(),
+            feedback,
+            console_errors: recent_errors,
+        };
+
+        let resp = serde_json::json!({
+            "type": "validation_collect_trace_bundle_result",
+            "requestId": request_id,
+            "ok": true,
+            "bundle": summary
+        });
+        write.send(Message::Text(resp.to_string())).await?;
+        return Ok(());
+    }
+
+    if typ == "validation_human_completed" {
+        let msg = serde_json::json!({
+            "type": "validation_human_completed",
+            "ts": now_ms(),
+            "payload": value.get("payload").cloned().unwrap_or_default()
+        })
+        .to_string();
+        let _ = ws_broadcast.send(msg);
+        let resp = serde_json::json!({
+            "type": "validation_human_completed_result",
+            "requestId": request_id,
+            "ok": true
+        });
+        write.send(Message::Text(resp.to_string())).await?;
         return Ok(());
     }
 

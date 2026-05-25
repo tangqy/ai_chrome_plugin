@@ -10,5 +10,8 @@
     "lint": "pnpm -r lint",
     "bridge:run": "cargo run -p rust-bridge",
     "package:all": "node scripts/package-all.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
   }
 }

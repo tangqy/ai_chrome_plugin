@@ -294,6 +294,13 @@ export default defineBackground(() => {
       return true;
     }
 
+    if (message?.type === RuntimeMessageTypes.humanVerifyCompleted) {
+      ensureBridgeConnected();
+      sendToBridge({ type: 'validation_human_completed', ts: Date.now(), payload: message?.payload });
+      sendResponse({ ok: true });
+      return true;
+    }
+
     return false;
   });
 });
