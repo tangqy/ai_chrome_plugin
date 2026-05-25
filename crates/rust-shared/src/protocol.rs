@@ -95,6 +95,8 @@ pub struct HumanFeedbackItem {
     pub result: String,
     pub exception_type: Option<String>,
     pub comment: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub screenshots: Vec<String>,
     pub ts: u64,
 }
 

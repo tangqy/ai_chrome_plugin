@@ -160,15 +160,18 @@ impl LogStore {
         }
     }
 
-    pub fn cleanup_old(&self, days: u32) -> anyhow::Result<usize> {
+    pub fn cleanup_older_than_ms(&self, max_age_ms: u64) -> anyhow::Result<usize> {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-        let cutoff = (now_ms() / 1000) as i64 - (days as i64 * 86400);
-        let cutoff_ms = cutoff * 1000;
+        let cutoff_ms = (now_ms() as i128) - (max_age_ms as i128);
         let count = conn.execute(
             "DELETE FROM log_events WHERE ts < ?1",
-            params![cutoff_ms],
+            params![cutoff_ms as i64],
         )?;
         Ok(count)
+    }
+
+    pub fn cleanup_old(&self, days: u32) -> anyhow::Result<usize> {
+        self.cleanup_older_than_ms(days as u64 * 86_400_000)
     }
 }
 

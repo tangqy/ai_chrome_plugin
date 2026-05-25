@@ -29,6 +29,7 @@ export type HumanFeedback = {
     | 'timeout'
     | 'other';
   comment?: string;
+  screenshots?: string[];
   ts: number;
 };
 

@@ -20,9 +20,9 @@ mod session;
 mod validation;
 mod ws_handlers;
 
+use log_store::SharedLogStore;
 use session::{ConsoleErrorEvent, SessionInfo, SharedErrors, SharedPrintHash, SharedSessions};
 use validation::SharedHumanFeedback;
-use log_store::SharedLogStore;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -38,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
         Vec<rust_shared::protocol::HumanFeedbackItem>,
     >::new()));
     let log_store: SharedLogStore = Arc::new(
-        log_store::LogStore::new().expect("Failed to open log database (~/.wujie/wujie_bridge.db)")
+        log_store::LogStore::new().expect("Failed to open log database (~/.wujie/wujie_bridge.db)"),
     );
 
     let ws_errors = errors.clone();
@@ -67,13 +67,13 @@ async fn main() -> anyhow::Result<()> {
 
     let cleanup_store = log_store.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1800));
         loop {
             interval.tick().await;
-            match cleanup_store.cleanup_old(7) {
+            match cleanup_store.cleanup_older_than_ms(24 * 3600 * 1000) {
                 Ok(count) => {
                     if count > 0 {
-                        eprintln!("[bridge] cleaned up {count} old log events");
+                        eprintln!("[bridge] cleaned up {count} log events older than 24h");
                     }
                 }
                 Err(e) => eprintln!("[bridge] log cleanup failed: {e}"),

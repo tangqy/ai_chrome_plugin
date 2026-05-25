@@ -332,6 +332,15 @@ async fn handle_ws_json(
                 .get("comment")
                 .and_then(|v| v.as_str())
                 .map(ToString::to_string),
+            screenshots: payload
+                .get("screenshots")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default(),
             ts: payload
                 .get("ts")
                 .and_then(|v| v.as_u64())

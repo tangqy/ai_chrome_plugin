@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { Alert, Button, Card, Divider, Input, List, Space, Typography } from 'antd';
+import { Alert, Button, Card, Divider, Input, List, Space, Typography, Image } from 'antd';
+import { UploadOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import 'antd/dist/reset.css';
 
 import { RuntimeMessageTypes, type HumanFeedback, type HumanVerifyTask } from '../shared/validation';
@@ -9,10 +10,20 @@ type StepStatus = 'pending' | 'passed' | 'failed' | 'blocked' | 'suspended';
 
 type TaskPhase = 'in_progress' | 'completed' | 'suspended';
 
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 function App() {
   const [task, setTask] = React.useState<HumanVerifyTask | null>(null);
   const [stepStatuses, setStepStatuses] = React.useState<Map<string, StepStatus>>(new Map());
   const [comment, setComment] = React.useState('');
+  const [screenshots, setScreenshots] = React.useState<string[]>([]);
   const [phase, setPhase] = React.useState<TaskPhase>('in_progress');
   const [startTime] = React.useState(Date.now());
 
@@ -24,6 +35,7 @@ function App() {
         setTask((m.payload as HumanVerifyTask | null) ?? null);
         setStepStatuses(new Map());
         setComment('');
+        setScreenshots([]);
         setPhase('in_progress');
       }
     };
@@ -33,12 +45,42 @@ function App() {
       if (res?.ok) {
         setTask((res.payload?.task as HumanVerifyTask | null) ?? null);
         setStepStatuses(new Map());
+        setScreenshots([]);
         setPhase('in_progress');
       }
     });
 
     return () => chrome.runtime.onMessage.removeListener(handler);
   }, []);
+
+  React.useEffect(() => {
+    const handlePaste = async (e: ClipboardEvent) => {
+      const files = e.clipboardData?.files;
+      if (!files || files.length === 0) return;
+      for (const file of Array.from(files)) {
+        if (!file.type.startsWith('image/')) continue;
+        const base64 = await fileToBase64(file);
+        setScreenshots((prev) => [...prev, base64]);
+      }
+    };
+    document.addEventListener('paste', handlePaste);
+    return () => document.removeEventListener('paste', handlePaste);
+  }, []);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith('image/')) continue;
+      const base64 = await fileToBase64(file);
+      setScreenshots((prev) => [...prev, base64]);
+    }
+    e.target.value = '';
+  };
+
+  const removeScreenshot = (index: number) => {
+    setScreenshots((prev) => prev.filter((_, i) => i !== index));
+  };
 
   const submitStep = async (stepId: string, result: HumanFeedback['result']) => {
     if (!task) return;
@@ -51,6 +93,7 @@ function App() {
           stepId,
           result,
           comment: comment.trim() ? comment.trim() : undefined,
+          screenshots: screenshots.length > 0 ? screenshots : undefined,
           ts: Date.now(),
         } satisfies HumanFeedback,
       });
@@ -60,6 +103,7 @@ function App() {
         return next;
       });
       setComment('');
+      setScreenshots([]);
     } catch (e) {
       console.error('Failed to submit feedback:', e);
     }
@@ -116,6 +160,7 @@ function App() {
     setTask(null);
     setStepStatuses(new Map());
     setComment('');
+    setScreenshots([]);
     setPhase('in_progress');
   };
 
@@ -140,14 +185,8 @@ function App() {
     suspended: '已挂起',
   };
 
-  const phaseColor: Record<TaskPhase, string> = {
-    in_progress: 'warning',
-    completed: 'success',
-    suspended: 'default',
-  };
-
   return (
-    <main style={{ padding: 12, height: '100vh', boxSizing: 'border-box', background: '#f5f7fa' }}>
+    <main style={{ padding: 12, height: '100vh', boxSizing: 'border-box', background: '#f5f7fa', overflow: 'auto' }}>
       <Card size="small" title="人工验证">
         {!task ? (
           <Alert type="info" message="暂无待执行的验证任务" showIcon />
@@ -170,9 +209,7 @@ function App() {
             />
 
             <Space>
-              <Typography.Text type="secondary">
-                状态：{phaseLabel[phase]}
-              </Typography.Text>
+              <Typography.Text type="secondary">状态：{phaseLabel[phase]}</Typography.Text>
               <Divider type="vertical" />
               <Typography.Text type="secondary">
                 进度：{task.steps.filter((s) => stepStatuses.has(s.stepId)).length}/{task.steps.length}
@@ -194,33 +231,15 @@ function App() {
                           {idx + 1}. {step.instruction}
                           {done && (
                             <Typography.Text
-                              type={
-                                status === 'passed'
-                                  ? 'success'
-                                  : status === 'failed'
-                                    ? 'danger'
-                                    : 'warning'
-                              }
+                              type={status === 'passed' ? 'success' : status === 'failed' ? 'danger' : 'warning'}
                               style={{ marginLeft: 8 }}
                             >
-                              [
-                              {status === 'passed'
-                                ? '通过'
-                                : status === 'failed'
-                                  ? '失败'
-                                  : status === 'suspended'
-                                    ? '挂起'
-                                    : status === 'blocked'
-                                      ? '阻塞'
-                                      : status}
-                              ]
+                              [{status === 'passed' ? '通过' : status === 'failed' ? '失败' : status === 'suspended' ? '挂起' : status === 'blocked' ? '阻塞' : status}]
                             </Typography.Text>
                           )}
                         </Typography.Text>
                         {step.expected ? <Typography.Text type="secondary">预期：{step.expected}</Typography.Text> : null}
-                        <Typography.Text type="secondary">
-                          stepId: {step.stepId} · {step.type}
-                        </Typography.Text>
+                        <Typography.Text type="secondary">stepId: {step.stepId} · {step.type}</Typography.Text>
                       </Space>
                       {!done && phase === 'in_progress' && (
                         <Space>
@@ -245,43 +264,66 @@ function App() {
               autoSize={{ minRows: 2, maxRows: 4 }}
             />
 
+            {screenshots.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {screenshots.map((src, i) => (
+                  <div key={i} style={{ position: 'relative', width: 80, height: 80 }}>
+                    <Image
+                      src={src}
+                      width={80}
+                      height={80}
+                      style={{ objectFit: 'cover', borderRadius: 4, border: '1px solid #d9d9d9' }}
+                      preview={{ mask: '查看' }}
+                    />
+                    <Button
+                      type="text"
+                      danger
+                      size="small"
+                      icon={<CloseCircleOutlined />}
+                      style={{ position: 'absolute', top: -6, right: -6, padding: 0, fontSize: 16 }}
+                      onClick={() => removeScreenshot(i)}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <Space>
+              <label style={{ cursor: 'pointer' }}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e) => void handleFileSelect(e)}
+                />
+                <Button size="small" icon={<UploadOutlined />} onClick={() => {}}>
+                  上传截图
+                </Button>
+              </label>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                或在页面中 Ctrl+V 粘贴截图
+              </Typography.Text>
+            </Space>
+
             <Divider style={{ margin: '4px 0' }} />
 
             <Space wrap>
               {phase === 'in_progress' && !allStepsDone && (
-                <>
-                  <Button
-                    type="dashed"
-                    onClick={() => void submitSuspend()}
-                  >
-                    ⏸ 挂起（耗时较长，稍后继续）
-                  </Button>
-                </>
+                <Button type="dashed" onClick={() => void submitSuspend()}>
+                  ⏸ 挂起（耗时较长，稍后继续）
+                </Button>
               )}
               {phase === 'in_progress' && (
-                <Button
-                  type="primary"
-                  disabled={!allStepsDone}
-                  onClick={() => void markCompleted()}
-                >
+                <Button type="primary" disabled={!allStepsDone} onClick={() => void markCompleted()}>
                   ✓ 验证完毕，提交给 AI
                 </Button>
               )}
               {phase === 'completed' && (
-                <Alert
-                  type="success"
-                  message="验证已完毕，AI 正在处理结果..."
-                  showIcon
-                  style={{ width: '100%' }}
-                />
+                <Alert type="success" message="验证已完毕，AI 正在处理结果..." showIcon style={{ width: '100%' }} />
               )}
               {phase === 'suspended' && (
-                <Alert
-                  type="warning"
-                  message="任务已挂起，未完成步骤标记为 suspended"
-                  showIcon
-                  style={{ width: '100%' }}
-                />
+                <Alert type="warning" message="任务已挂起，未完成步骤标记为 suspended" showIcon style={{ width: '100%' }} />
               )}
               {(phase === 'completed' || phase === 'suspended') && (
                 <Button danger size="small" onClick={clearTask}>
