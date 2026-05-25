@@ -13,6 +13,7 @@ pub enum LogTarget {
     Both,
 }
 
+mod log_store;
 mod mcp_tools;
 mod nl_parser;
 mod session;
@@ -21,6 +22,7 @@ mod ws_handlers;
 
 use session::{ConsoleErrorEvent, SessionInfo, SharedErrors, SharedPrintHash, SharedSessions};
 use validation::SharedHumanFeedback;
+use log_store::SharedLogStore;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -35,6 +37,12 @@ async fn main() -> anyhow::Result<()> {
         String,
         Vec<rust_shared::protocol::HumanFeedbackItem>,
     >::new()));
+    let log_store: SharedLogStore = Arc::new(
+        log_store::LogStore::new().unwrap_or_else(|e| {
+            eprintln!("Failed to open log database: {e}, continuing without persistence");
+            panic!("log_store init failed")
+        }),
+    );
 
     let ws_errors = errors.clone();
     let ws_sessions = sessions.clone();
@@ -43,6 +51,7 @@ async fn main() -> anyhow::Result<()> {
     let ws_log_target = log_target.clone();
     let ws_sender = ws_broadcast.clone();
     let ws_human_feedback = human_feedback.clone();
+    let ws_log_store = log_store.clone();
     tokio::spawn(async move {
         if let Err(err) = ws_handlers::run_ws_server(
             ws_errors,
@@ -51,6 +60,7 @@ async fn main() -> anyhow::Result<()> {
             ws_log_target,
             ws_sender,
             ws_human_feedback,
+            ws_log_store,
         )
         .await
         {
@@ -58,7 +68,7 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    run_stdio_loop(errors, sessions, human_feedback, ws_broadcast).await
+    run_stdio_loop(errors, sessions, human_feedback, ws_broadcast, log_store).await
 }
 
 async fn run_stdio_loop(
@@ -66,6 +76,7 @@ async fn run_stdio_loop(
     sessions: SharedSessions,
     human_feedback: SharedHumanFeedback,
     ws_broadcast: broadcast::Sender<String>,
+    log_store: SharedLogStore,
 ) -> anyhow::Result<()> {
     let stdin = io::stdin();
     let mut lines = BufReader::new(stdin).lines();
@@ -94,6 +105,7 @@ async fn run_stdio_loop(
             sessions.clone(),
             human_feedback.clone(),
             ws_broadcast.clone(),
+            log_store.clone(),
             now_ms(),
         )
         .await;

@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 use tokio::time::{interval, Duration};
 use tokio_tungstenite::{accept_async, tungstenite::Message, WebSocketStream};
 
+use crate::log_store::SharedLogStore;
 use crate::session::{
     ConsoleErrorEvent, SessionInfo, SharedErrors, SharedPrintHash, SharedSessions,
 };
@@ -27,6 +28,7 @@ pub async fn run_ws_server(
     log_target: SharedLogTarget,
     ws_broadcast: WsBroadcast,
     human_feedback: SharedHumanFeedback,
+    log_store: SharedLogStore,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:8787").await?;
     loop {
@@ -37,6 +39,7 @@ pub async fn run_ws_server(
         let log_target = log_target.clone();
         let ws_broadcast = ws_broadcast.clone();
         let human_feedback = human_feedback.clone();
+        let log_store = log_store.clone();
         tokio::spawn(async move {
             if let Err(err) = handle_ws_connection(
                 stream,
@@ -46,6 +49,7 @@ pub async fn run_ws_server(
                 log_target,
                 ws_broadcast,
                 human_feedback,
+                log_store,
             )
             .await
             {
@@ -63,6 +67,7 @@ async fn handle_ws_connection(
     log_target: SharedLogTarget,
     ws_broadcast: WsBroadcast,
     human_feedback: SharedHumanFeedback,
+    log_store: SharedLogStore,
 ) -> anyhow::Result<()> {
     let ws_stream = accept_async(stream).await?;
     let (mut write, mut read) = ws_stream.split();
@@ -102,6 +107,7 @@ async fn handle_ws_connection(
                                 &log_target,
                                 &human_feedback,
                                 &ws_broadcast,
+                                &log_store,
                             )
                             .await?;
                         }
@@ -126,6 +132,7 @@ async fn handle_ws_json(
     log_target: &SharedLogTarget,
     human_feedback: &SharedHumanFeedback,
     ws_broadcast: &WsBroadcast,
+    log_store: &SharedLogStore,
 ) -> anyhow::Result<()> {
     let typ = value
         .get("type")
@@ -508,6 +515,7 @@ async fn handle_ws_json(
             ts: now_ms(),
             feedback,
             console_errors: recent_errors,
+            log_events: log_store.query_by_task_id(&task_id, 200),
         };
 
         let resp = serde_json::json!({
@@ -534,6 +542,28 @@ async fn handle_ws_json(
             "ok": true
         });
         write.send(Message::Text(resp.to_string())).await?;
+        return Ok(());
+    }
+
+    if typ == "log_event" {
+        let payload = value.get("payload").cloned().unwrap_or_default();
+        let event = rust_shared::protocol::LogEventItem {
+            id: payload.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            trace_id: payload.get("traceId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            task_id: payload.get("taskId").and_then(|v| v.as_str()).map(String::from),
+            step_id: payload.get("stepId").and_then(|v| v.as_str()).map(String::from),
+            source: payload.get("source").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
+            module: payload.get("module").and_then(|v| v.as_str()).unwrap_or("app").to_string(),
+            kind: payload.get("kind").and_then(|v| v.as_str()).unwrap_or("custom").to_string(),
+            level: payload.get("level").and_then(|v| v.as_str()).unwrap_or("info").to_string(),
+            action: payload.get("action").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            message: payload.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            ts: payload.get("ts").and_then(|v| v.as_u64()).unwrap_or_else(now_ms),
+            attrs: payload.get("attrs").and_then(|v| serde_json::to_string(v).ok()),
+        };
+        if let Err(e) = log_store.insert(&event) {
+            eprintln!("Failed to insert log event: {e}");
+        }
         return Ok(());
     }
 

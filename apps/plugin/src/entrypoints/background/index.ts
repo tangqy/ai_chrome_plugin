@@ -14,6 +14,7 @@ import { runDomainSync, runSyncData } from './operations';
 import { broadcastSnapshot, hydrateState, persistState, snapshot, state } from './state';
 import { RuntimeMessageTypes } from '../shared/validation';
 import { getHumanVerifyTask, handleBridgeHumanVerifyMessage, setHumanVerifyTask } from './humanVerify';
+import { installLogSink } from './logSink';
 import type { HumanFeedback } from '../shared/validation';
 
 export default defineBackground(() => {
@@ -24,6 +25,7 @@ export default defineBackground(() => {
     initBridge();
     initAutomationTicker();
     initNetworkRecorder();
+    installLogSink();
     broadcastSnapshot();
 
     addBridgeMessageListener((msg) => {
@@ -297,6 +299,13 @@ export default defineBackground(() => {
     if (message?.type === RuntimeMessageTypes.humanVerifyCompleted) {
       ensureBridgeConnected();
       sendToBridge({ type: 'validation_human_completed', ts: Date.now(), payload: message?.payload });
+      sendResponse({ ok: true });
+      return true;
+    }
+
+    if (message?.type === RuntimeMessageTypes.logEventForward) {
+      ensureBridgeConnected();
+      sendToBridge({ type: 'log_event', ts: Date.now(), payload: message?.payload });
       sendResponse({ ok: true });
       return true;
     }

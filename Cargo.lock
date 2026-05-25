@@ -2796,6 +2796,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "futures-util",
+ "rusqlite",
  "rust-shared",
  "serde",
  "serde_json",

@@ -2,6 +2,7 @@ use rust_shared::protocol::{
     BridgeRequest, BridgeResponse, ConsoleErrorItem, SessionItem, StatusItem, TraceBundleSummary,
 };
 
+use crate::log_store::SharedLogStore;
 use crate::session::{SharedErrors, SharedSessions};
 use crate::validation::{get_feedback, SharedHumanFeedback};
 use tokio::sync::broadcast::Sender;
@@ -12,6 +13,7 @@ pub async fn handle_request(
     sessions: SharedSessions,
     human_feedback: SharedHumanFeedback,
     ws_broadcast: Sender<String>,
+    log_store: SharedLogStore,
     now_ms: u64,
 ) -> BridgeResponse {
     match req {
@@ -112,10 +114,11 @@ pub async fn handle_request(
                 })
                 .collect::<Vec<_>>();
             let bundle = TraceBundleSummary {
-                task_id: payload.task_id,
+                task_id: payload.task_id.clone(),
                 ts: now_ms,
                 feedback,
                 console_errors: console_items,
+                log_events: log_store.query_by_task_id(&payload.task_id, 200),
             };
             BridgeResponse::ValidationCollectTraceBundleResult {
                 request_id,

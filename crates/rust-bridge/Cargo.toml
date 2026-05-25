@@ -14,3 +14,4 @@ tokio-tungstenite = "0.24"
 similar = "2.7"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 url = "2.5"
+rusqlite = { version = "0.31", features = ["bundled"] }

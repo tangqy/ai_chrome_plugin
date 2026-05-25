@@ -104,6 +104,25 @@ pub struct TraceBundleSummary {
     pub ts: u64,
     pub feedback: Vec<HumanFeedbackItem>,
     pub console_errors: Vec<ConsoleErrorItem>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub log_events: Vec<LogEventItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogEventItem {
+    pub id: String,
+    pub trace_id: String,
+    pub task_id: Option<String>,
+    pub step_id: Option<String>,
+    pub source: String,
+    pub module: String,
+    pub kind: String,
+    pub level: String,
+    pub action: String,
+    pub message: String,
+    pub ts: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attrs: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
