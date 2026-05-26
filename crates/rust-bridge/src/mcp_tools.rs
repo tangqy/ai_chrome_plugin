@@ -101,6 +101,14 @@ pub async fn handle_request(
             payload,
         } => {
             let feedback = get_feedback(&human_feedback, &payload.task_id).await;
+            for f in &feedback {
+                eprintln!(
+                    "[bridge] collect_bundle: step_id={}, screenshots_count={}, screenshots_total_bytes={}",
+                    f.step_id,
+                    f.screenshots.len(),
+                    f.screenshots.iter().map(|s| s.len()).sum::<usize>()
+                );
+            }
             let guard = errors.lock().await;
             let console_items = guard
                 .iter()

@@ -315,6 +315,21 @@ async fn handle_ws_json(
         if task_id.is_empty() || trace_id.is_empty() || step_id.is_empty() {
             return Ok(());
         }
+
+        let screenshots_raw = payload.get("screenshots");
+        let screenshots_count = screenshots_raw
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.len())
+            .unwrap_or(0);
+        let screenshots_total_bytes: usize = screenshots_raw
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(|s| s.len()).sum())
+            .unwrap_or(0);
+        eprintln!(
+            "[bridge] validation_human_feedback: task_id={}, step_id={}, screenshots_count={}, screenshots_total_bytes={}",
+            task_id, step_id, screenshots_count, screenshots_total_bytes
+        );
+
         let feedback = rust_shared::protocol::HumanFeedbackItem {
             task_id,
             trace_id,
@@ -506,6 +521,14 @@ async fn handle_ws_json(
             .to_string();
 
         let feedback = get_feedback(human_feedback, &task_id).await;
+        for f in &feedback {
+            eprintln!(
+                "[bridge] ws_collect_bundle: step_id={}, screenshots_count={}, screenshots_total_bytes={}",
+                f.step_id,
+                f.screenshots.len(),
+                f.screenshots.iter().map(|s| s.len()).sum::<usize>()
+            );
+        }
         let earliest_ts = feedback.iter().map(|f| f.ts).min().unwrap_or(0);
         let window_start = if earliest_ts > 0 {
             earliest_ts.saturating_sub(60_000)
