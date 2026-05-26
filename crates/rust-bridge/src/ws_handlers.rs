@@ -506,19 +506,28 @@ async fn handle_ws_json(
             .to_string();
 
         let feedback = get_feedback(human_feedback, &task_id).await;
+        let earliest_ts = feedback.iter().map(|f| f.ts).min().unwrap_or(0);
+        let window_start = if earliest_ts > 0 {
+            earliest_ts.saturating_sub(60_000)
+        } else {
+            0
+        };
         let recent_errors = {
             let guard = errors.lock().await;
-            guard
+            let mut items: Vec<_> = guard
                 .iter()
+                .filter(|e| window_start == 0 || e.ts >= window_start)
                 .rev()
-                .take(10)
+                .take(20)
                 .map(|e| rust_shared::protocol::ConsoleErrorItem {
                     message: e.message.clone(),
                     url: e.url.clone(),
                     tab_id: e.tab_id,
                     ts: e.ts,
                 })
-                .collect::<Vec<_>>()
+                .collect();
+            items.reverse();
+            items
         };
 
         let summary = rust_shared::protocol::TraceBundleSummary {
@@ -623,6 +632,80 @@ async fn handle_ws_json(
         };
         if let Err(e) = log_store.insert(&event) {
             eprintln!("Failed to insert log event: {e}");
+        }
+        return Ok(());
+    }
+
+    if typ == "log_event_batch" {
+        let items = value.get("payload").and_then(|v| v.as_array());
+        if let Some(items) = items {
+            for item in items {
+                let id = item
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let trace_id = item
+                    .get("traceId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if id.is_empty() || trace_id.is_empty() {
+                    continue;
+                }
+                let event = rust_shared::protocol::LogEventItem {
+                    id,
+                    trace_id,
+                    task_id: item
+                        .get("taskId")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
+                    step_id: item
+                        .get("stepId")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
+                    source: item
+                        .get("source")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                        .to_string(),
+                    module: item
+                        .get("module")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("app")
+                        .to_string(),
+                    kind: item
+                        .get("kind")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("custom")
+                        .to_string(),
+                    level: item
+                        .get("level")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("info")
+                        .to_string(),
+                    action: item
+                        .get("action")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    message: item
+                        .get("message")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    ts: item
+                        .get("ts")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or_else(now_ms),
+                    attrs: item
+                        .get("attrs")
+                        .and_then(|v| serde_json::to_string(v).ok()),
+                };
+                if let Err(e) = log_store.insert(&event) {
+                    eprintln!("Failed to insert batch log event: {e}");
+                }
+            }
         }
         return Ok(());
     }

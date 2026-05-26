@@ -106,7 +106,7 @@ pub struct TraceBundleSummary {
     pub ts: u64,
     pub feedback: Vec<HumanFeedbackItem>,
     pub console_errors: Vec<ConsoleErrorItem>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub log_events: Vec<LogEventItem>,
 }
 

@@ -21,10 +21,21 @@ AI 写完代码 → **在代码中注入运行时日志** → 生成可执行操
 
 AI 在开发代码时，必须在关键路径注入运行时日志，这些日志会在浏览器执行时产生证据，验证时自动收集到 trace bundle 中。
 
-### 从 `@xlb/utils` 导入 logger
+### 选择正确的 logger 包
+
+| 项目类型 | 导入路径 | 说明 |
+|---|---|---|
+| **本插件项目** (ai_chrome_plugin) | `@wujie/logger-ts` | 插件内已安装 sink，日志自动转发到 Bridge → SQLite |
+| **普通前端项目** (xlb 业务项目) | `@xlb/utils` | 需自行安装 sink 转发日志 |
+
+### 从 logger 包导入
 
 ```typescript
-import { aiTrace, aiAssert, aiManualFeedback, createLogger } from '@xlb/utils';
+// 本插件项目内
+import { aiTrace, aiAssert } from '@wujie/logger-ts';
+
+// 普通前端项目
+import { aiTrace, aiAssert } from '@wujie/logger-ts'; // 或 '@xlb/utils'
 ```
 
 ### 注入追踪日志 — `aiTrace`
@@ -32,7 +43,7 @@ import { aiTrace, aiAssert, aiManualFeedback, createLogger } from '@xlb/utils';
 在关键用户操作和业务流程节点注入，记录"发生了什么"：
 
 ```typescript
-import { aiTrace } from '@xlb/utils';
+import { aiTrace } from '@wujie/logger-ts'; // 或 '@xlb/utils'
 
 function handleSubmit() {
   aiTrace('checkout', 'submit_clicked', '用户点击了提交按钮');
@@ -58,7 +69,7 @@ function handleSubmit() {
 在验证点注入，记录"是否符合预期"：
 
 ```typescript
-import { aiAssert } from '@xlb/utils';
+import { aiAssert } from '@wujie/logger-ts'; // 或 '@xlb/utils'
 
 function onPageLoad() {
   const title = document.title;
@@ -86,7 +97,7 @@ function afterApiCall(response) {
 在需要记录人工判断结果的场景使用：
 
 ```typescript
-import { aiManualFeedback } from '@xlb/utils';
+import { aiManualFeedback } from '@wujie/logger-ts'; // 或 '@xlb/utils'
 
 function onUserFeedback(stepResult: 'ok' | 'ng') {
   if (stepResult === 'ok') {
@@ -100,7 +111,7 @@ function onUserFeedback(stepResult: 'ok' | 'ng') {
 ### 创建自定义 Logger
 
 ```typescript
-import { createLogger, setLogSink } from '@xlb/utils';
+import { createLogger, setLogSink } from '@wujie/logger-ts'; // 或 '@xlb/utils'
 
 const logger = createLogger({
   app: 'my-feature',
@@ -125,7 +136,7 @@ childLogger.trace('order', 'step_executing', '执行步骤2');
 
 ```
 代码中 aiTrace/aiAssert/aiManualFeedback
-  → @xlb/utils logger（运行时）
+  → @wujie/logger-ts 或 @xlb/utils logger（运行时）
   → setLogSink（由插件 Background 自动安装）
   → Bridge WebSocket → SQLite (~/.wujie/wujie_bridge.db)
 
@@ -140,10 +151,10 @@ AI 在写代码时使用这些 API，浏览器运行时产生日志：
 
 | API | 导入 | 说明 |
 |---|---|---|
-| `aiTrace` | `@xlb/utils` | 追踪日志：记录"发生了什么" |
-| `aiAssert` | `@xlb/utils` | 断言日志：记录"是否符合预期" |
-| `aiManualFeedback` | `@xlb/utils` | 人工反馈日志 |
-| `createLogger` | `@xlb/utils` | 创建自定义 logger |
+| `aiTrace` | `@wujie/logger-ts` / `@xlb/utils` | 追踪日志：记录"发生了什么" |
+| `aiAssert` | `@wujie/logger-ts` / `@xlb/utils` | 断言日志：记录"是否符合预期" |
+| `aiManualFeedback` | `@wujie/logger-ts` / `@xlb/utils` | 人工反馈日志 |
+| `createLogger` | `@wujie/logger-ts` / `@xlb/utils` | 创建自定义 logger |
 
 ### MCP 工具（AI 直接调用）
 
@@ -238,7 +249,7 @@ AI 综合分析三部分证据：
 开发代码时：
 - [ ] 已在关键用户操作路径注入 `aiTrace`
 - [ ] 已在验证点注入 `aiAssert`（expected vs actual）
-- [ ] 已在代码顶部 `import { aiTrace, aiAssert } from '@xlb/utils'`
+- [ ] 已在代码顶部 `import { aiTrace, aiAssert } from '@wujie/logger-ts'` （或 `@xlb/utils`）
 
 验证时：
 - [ ] 已调用 `validation_request_human_action` 推送任务
